@@ -1,4 +1,4 @@
-package net.valcheff.villagerailways.village;
+package net.valcheff.villagerailways.structure;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -19,6 +20,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.WorldgenRandom;
@@ -29,64 +31,76 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
 
 /**
- * Finds the villages a level will generate without generating any chunks.
+ * Finds structures a level will generate without generating any chunks.
  *
- * <p>Every placement cell of a village structure set yields one candidate chunk. The candidate goes through the same
- * steps as {@link ChunkGenerator#createStructures}: the placement check (frequency and exclusion zones), the weighted
- * pick between the set's structures, and {@link Structure#generate}, which checks the biome at the start's surface
- * height and lays out the jigsaw pieces. The result is the start the chunk will get, with its exact bounds. Only
- * random-spread placements are handled; vanilla villages use one.
+ * <p>Every placement cell of a structure set yields one candidate chunk. The candidate goes through the same steps as
+ * {@link ChunkGenerator#createStructures}: the placement check (frequency and exclusion zones), the weighted pick
+ * between the set's structures, and {@link Structure#generate}, which checks the biome at the start's surface height
+ * and lays out the pieces. The result is the start the chunk will get, with its exact bounds. Only random-spread
+ * placements are handled; every vanilla structure above ground uses one.
  */
-public class VillagePredictor {
+public class StructurePredictor {
 	private final ServerLevel level;
 	private final ChunkGenerator generator;
 	private final ChunkGeneratorStructureState structureState;
 	private final RandomState randomState;
 	private final Climate.Sampler climateSampler;
 	private final Registry<Structure> structures;
-	private final List<Holder<StructureSet>> villageSets;
-	private final Map<Long, Optional<PredictedVillage>> cache = new ConcurrentHashMap<>();
+	private final Predicate<Holder<Structure>> wanted;
+	private final List<Holder<StructureSet>> sets;
+	private final Map<Long, List<PredictedStructure>> cache = new ConcurrentHashMap<>();
 
-	public VillagePredictor(ServerLevel level) {
+	public StructurePredictor(ServerLevel level, Predicate<Holder<Structure>> wanted) {
 		this.level = level;
 		this.generator = level.getChunkSource().getGenerator();
 		this.structureState = level.getChunkSource().getGeneratorState();
 		this.randomState = level.getChunkSource().randomState();
 		this.climateSampler = randomState.createClimateSampler(SamplerContext.builder().enableCaches().build());
 		this.structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
-		this.villageSets = structureState.possibleStructureSets().stream()
+		this.wanted = wanted;
+		this.sets = structureState.possibleStructureSets().stream()
 				.filter(set -> set.value().placement() instanceof RandomSpreadStructurePlacement)
-				.filter(set -> set.value().structures().stream().anyMatch(entry -> entry.structure().is(StructureTags.VILLAGE)))
+				.filter(set -> set.value().structures().stream().anyMatch(entry -> wanted.test(entry.structure())))
 				.toList();
 	}
 
-	/** Villages whose start piece lies within {@code radius} blocks of {@code center}, nearest first. */
-	public List<PredictedVillage> villagesNear(BlockPos center, int radius) {
+	/** Predicts villages: structures in the {@code #minecraft:village} tag. */
+	public static StructurePredictor villages(ServerLevel level) {
+		return new StructurePredictor(level, structure -> structure.is(StructureTags.VILLAGE));
+	}
+
+	/** Predicts what a railway line has to go around: every structure built on the surface except villages. */
+	public static StructurePredictor surfaceObstacles(ServerLevel level) {
+		return new StructurePredictor(level, structure -> !structure.is(StructureTags.VILLAGE)
+				&& structure.value().step() == GenerationStep.Decoration.SURFACE_STRUCTURES);
+	}
+
+	/** Structures whose start piece lies within {@code radius} blocks of {@code center}, nearest first. */
+	public List<PredictedStructure> structuresNear(BlockPos center, int radius) {
 		long radiusSq = (long) radius * radius;
-		List<PredictedVillage> found = new ArrayList<>();
-		for (ChunkPos candidate : candidateChunks(ChunkPos.containing(center), (radius >> 4) + 1)) {
-			predictAt(candidate).filter(village -> horizontalDistanceSq(village.center(), center) <= radiusSq)
-					.ifPresent(found::add);
+		List<PredictedStructure> found = new ArrayList<>();
+		ChunkPos centerChunk = ChunkPos.containing(center);
+		int chunkRadius = (radius >> 4) + 1;
+		for (ChunkPos candidate : candidateChunks(centerChunk.x() - chunkRadius, centerChunk.z() - chunkRadius,
+				centerChunk.x() + chunkRadius, centerChunk.z() + chunkRadius)) {
+			predictAt(candidate).stream().filter(structure -> horizontalDistanceSq(structure.center(), center) <= radiusSq)
+					.forEach(found::add);
 		}
-		found.sort(Comparator.comparingLong(village -> horizontalDistanceSq(village.center(), center)));
+		found.sort(Comparator.comparingLong(structure -> horizontalDistanceSq(structure.center(), center)));
 		return found;
 	}
 
-	/** Every chunk within {@code chunkRadius} of {@code center} that a village set could pick, one per placement cell. */
-	public List<ChunkPos> candidateChunks(ChunkPos center, int chunkRadius) {
+	/** Every chunk in the given chunk range that one of the sets could pick, one per placement cell and set. */
+	public List<ChunkPos> candidateChunks(int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
 		Set<ChunkPos> chunks = new LinkedHashSet<>();
 		long seed = structureState.getLevelSeed();
-		for (Holder<StructureSet> set : villageSets) {
+		for (Holder<StructureSet> set : sets) {
 			RandomSpreadStructurePlacement placement = (RandomSpreadStructurePlacement) set.value().placement();
 			int spacing = placement.spacing();
-			int minCellX = Math.floorDiv(center.x() - chunkRadius, spacing);
-			int maxCellX = Math.floorDiv(center.x() + chunkRadius, spacing);
-			int minCellZ = Math.floorDiv(center.z() - chunkRadius, spacing);
-			int maxCellZ = Math.floorDiv(center.z() + chunkRadius, spacing);
-			for (int cellX = minCellX; cellX <= maxCellX; cellX++) {
-				for (int cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+			for (int cellX = Math.floorDiv(minChunkX, spacing); cellX <= Math.floorDiv(maxChunkX, spacing); cellX++) {
+				for (int cellZ = Math.floorDiv(minChunkZ, spacing); cellZ <= Math.floorDiv(maxChunkZ, spacing); cellZ++) {
 					ChunkPos chunk = placement.getPotentialStructureChunk(seed, cellX * spacing, cellZ * spacing);
-					if (center.getChessboardDistance(chunk) <= chunkRadius) {
+					if (chunk.x() >= minChunkX && chunk.x() <= maxChunkX && chunk.z() >= minChunkZ && chunk.z() <= maxChunkZ) {
 						chunks.add(chunk);
 					}
 				}
@@ -95,27 +109,33 @@ public class VillagePredictor {
 		return new ArrayList<>(chunks);
 	}
 
-	/** The village that will start in {@code chunk}, if any. Results are cached. */
-	public Optional<PredictedVillage> predictAt(ChunkPos chunk) {
+	/** The wanted structures that will start in {@code chunk}, if any. Results are cached. */
+	public List<PredictedStructure> predictAt(ChunkPos chunk) {
 		return cache.computeIfAbsent(ChunkPos.pack(chunk.x(), chunk.z()), key -> computeAt(chunk));
 	}
 
-	/** Whether {@code structure} is in the {@code #minecraft:village} tag. */
-	public boolean isVillage(Structure structure) {
-		return structures.wrapAsHolder(structure).is(StructureTags.VILLAGE);
+	/** Whether {@code structure} is one this predictor looks for. */
+	public boolean wants(Structure structure) {
+		return wanted.test(structures.wrapAsHolder(structure));
 	}
 
-	private Optional<PredictedVillage> computeAt(ChunkPos chunk) {
-		for (Holder<StructureSet> set : villageSets) {
+	private List<PredictedStructure> computeAt(ChunkPos chunk) {
+		List<PredictedStructure> found = new ArrayList<>();
+		for (Holder<StructureSet> set : sets) {
 			if (!set.value().placement().isStructureChunk(structureState, chunk.x(), chunk.z())) {
 				continue;
 			}
 			StructureStart start = pickStart(set.value(), chunk);
-			if (start != null && isVillage(start.getStructure())) {
-				return Optional.of(toVillage(start, chunk));
+			if (start != null && wants(start.getStructure())) {
+				found.add(toPrediction(start, chunk));
 			}
 		}
-		return Optional.empty();
+		return List.copyOf(found);
+	}
+
+	/** First wanted structure that starts in {@code chunk}. */
+	public Optional<PredictedStructure> firstAt(ChunkPos chunk) {
+		return predictAt(chunk).stream().findFirst();
 	}
 
 	/** Same weighted pick as world generation: try entries in seeded random order until one generates. */
@@ -156,10 +176,10 @@ public class VillagePredictor {
 		return start.isValid() ? start : null;
 	}
 
-	private PredictedVillage toVillage(StructureStart start, ChunkPos chunk) {
+	private PredictedStructure toPrediction(StructureStart start, ChunkPos chunk) {
 		String name = structures.wrapAsHolder(start.getStructure()).getRegisteredName();
 		BlockPos center = start.getPieces().getFirst().getBoundingBox().getCenter();
-		return new PredictedVillage(name, chunk, center, start.getBoundingBox());
+		return new PredictedStructure(name, chunk, center, start.getBoundingBox());
 	}
 
 	private static long horizontalDistanceSq(BlockPos a, BlockPos b) {

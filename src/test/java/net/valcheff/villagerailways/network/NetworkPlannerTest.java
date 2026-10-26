@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -23,9 +22,11 @@ class NetworkPlannerTest {
 	void randomWorldGivesPlanarNetworkWithinLimits() {
 		List<Village> villages = scatter(new Random(7), 80, 8000);
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
-		// Explore the world in four batches, as players would.
-		for (int batch = 0; batch < 4; batch++) {
-			planner.addVillages(villages.subList(batch * 20, batch * 20 + 20), ACCEPT_ALL);
+		// Explore the world in four squares, as players would.
+		for (int square = 0; square < 4; square++) {
+			int minX = (square % 2) * 4000;
+			int minZ = (square / 2) * 4000;
+			explore(planner, villages, minX, minZ, minX + 3999, minZ + 3999, ACCEPT_ALL);
 		}
 		List<Link> links = planner.links();
 		assertTrue(links.size() > 40, "only " + links.size() + " lines");
@@ -34,20 +35,21 @@ class NetworkPlannerTest {
 
 	@Test
 	void largeWorldPlansQuickly() {
-		// About 5000 villages over 40 000 x 40 000 blocks, found in 100 batches as players spread out.
+		// About 5000 villages over 40 000 x 40 000 blocks, explored in 100 squares of 4000 blocks.
 		List<Village> villages = scatter(new Random(5), 5000, 40000);
-		villages.sort(Comparator.comparingLong(village -> village.center().distanceSq(new Point(20000, 20000))));
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
 		long slowestBatch = 0;
 		long started = System.nanoTime();
-		for (int batch = 0; batch < 100; batch++) {
+		for (int square = 0; square < 100; square++) {
 			long batchStart = System.nanoTime();
-			planner.addVillages(villages.subList(batch * 50, batch * 50 + 50), ACCEPT_ALL);
+			int minX = (square % 10) * 4000;
+			int minZ = (square / 10) * 4000;
+			explore(planner, villages, minX, minZ, minX + 3999, minZ + 3999, ACCEPT_ALL);
 			slowestBatch = Math.max(slowestBatch, System.nanoTime() - batchStart);
 		}
 		long totalMillis = (System.nanoTime() - started) / 1_000_000;
-		System.out.println("5000 villages, " + planner.links().size() + " lines in " + totalMillis + " ms, slowest batch of 50 "
-				+ slowestBatch / 1_000_000 + " ms");
+		System.out.println("5000 villages, " + planner.links().size() + " lines (" + planner.links().stream().filter(Link::trunk)
+				.count() + " trunk) in " + totalMillis + " ms, slowest square " + slowestBatch / 1_000_000 + " ms");
 		assertTrue(totalMillis < 20_000, "planning took " + totalMillis + " ms");
 	}
 
@@ -55,11 +57,11 @@ class NetworkPlannerTest {
 	void sameBatchInAnyOrderGivesSameNetwork() {
 		List<Village> villages = scatter(new Random(11), 40, 5000);
 		NetworkPlanner first = new NetworkPlanner(SETTINGS);
-		first.addVillages(villages, ACCEPT_ALL);
+		exploreAll(first, villages, ACCEPT_ALL);
 		List<Village> shuffled = new ArrayList<>(villages);
 		Collections.shuffle(shuffled, new Random(3));
 		NetworkPlanner second = new NetworkPlanner(SETTINGS);
-		second.addVillages(shuffled, ACCEPT_ALL);
+		exploreAll(second, shuffled, ACCEPT_ALL);
 		assertEquals(new HashSet<>(first.links()), new HashSet<>(second.links()));
 	}
 
@@ -72,7 +74,7 @@ class NetworkPlannerTest {
 			villages.add(village(10 + i, (int) (Math.cos(angle) * 600), (int) (Math.sin(angle) * 600)));
 		}
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
-		planner.addVillages(villages, ACCEPT_ALL);
+		exploreAll(planner, villages, ACCEPT_ALL);
 		assertTrue(planner.links().stream().filter(link -> link.connects(1)).count() <= 3);
 		assertNetworkRules(planner);
 	}
@@ -80,26 +82,103 @@ class NetworkPlannerTest {
 	@Test
 	void distantVillageWaitsForANeighbour() {
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
-		planner.addVillages(List.of(village(1, 0, 0), village(2, 2000, 0)), ACCEPT_ALL);
-		assertTrue(planner.links().isEmpty());
-		List<Link> added = planner.addVillages(List.of(village(3, 1000, 30)), ACCEPT_ALL);
+		// Squares on chunk borders, as the game explores them.
+		List<Village> villages = List.of(village(1, 0, 0), village(2, 2000, 0), village(3, 1000, 30));
+		explore(planner, villages, -608, -608, 607, 607, ACCEPT_ALL);
+		explore(planner, villages, 1408, -608, 2607, 607, ACCEPT_ALL);
+		assertTrue(planner.links().isEmpty(), "the land between is not explored yet");
+		List<Link> added = explore(planner, villages, 608, -608, 1407, 607, ACCEPT_ALL);
 		assertEquals(2, added.size());
+		assertTrue(added.stream().noneMatch(Link::trunk));
+		assertNetworkRules(planner);
+	}
+
+	@Test
+	void separateGroupsAreJoinedByOneTrunkLine() {
+		// Two triangles of villages 1800 blocks apart: too far for ordinary lines, close enough for a trunk line.
+		List<Village> villages = List.of(village(1, 0, 0), village(2, 600, 0), village(3, 300, 500),
+				village(4, 2400, 0), village(5, 3000, 0), village(6, 2700, 500));
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		exploreAll(planner, villages, ACCEPT_ALL);
+		List<Link> trunks = planner.links().stream().filter(Link::trunk).toList();
+		assertEquals(1, trunks.size());
+		assertTrue(trunks.getFirst().connects(2) && trunks.getFirst().connects(4), "nearest villages of the two groups");
+		assertNetworkRules(planner);
+	}
+
+	@Test
+	void groupGetsAtMostThreeTrunkLines() {
+		// A small group in the middle with five far groups around it.
+		List<Village> villages = new ArrayList<>();
+		villages.add(village(1, 0, 0));
+		villages.add(village(2, 500, 0));
+		for (int i = 0; i < 5; i++) {
+			double angle = Math.PI * 2 * i / 5;
+			villages.add(village(10 + i, 250 + (int) (Math.cos(angle) * 1900), (int) (Math.sin(angle) * 1900)));
+		}
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		exploreAll(planner, villages, ACCEPT_ALL);
+		long middleTrunks = planner.links().stream().filter(link -> link.trunk() && (link.connects(1) || link.connects(2))).count();
+		assertTrue(middleTrunks <= 3 && middleTrunks > 0, middleTrunks + " trunk lines from the middle group: " + planner.links());
 		assertNetworkRules(planner);
 	}
 
 	@Test
 	void rejectedPathIsNotBuilt() {
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
-		planner.addVillages(List.of(village(1, 0, 0), village(2, 700, 0)), path -> false);
+		exploreAll(planner, List.of(village(1, 0, 0), village(2, 700, 0)), path -> false);
 		assertTrue(planner.links().isEmpty());
+	}
+
+	@Test
+	void stationsLineUpInsteadOfAShortJog() {
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		exploreAll(planner, List.of(village(1, 0, 0), village(2, 800, 20)), ACCEPT_ALL);
+		Link link = planner.links().getFirst();
+		assertEquals(2, link.path().size(), "one straight, got " + link.path());
+	}
+
+	@Test
+	void lineStepsAroundAnObstacle() {
+		// A structure sits where the plain staircase would put a corner; the filter stands in for the world check.
+		NetworkPlanner.PathFilter obstacle = path -> {
+			for (int i = 1; i < path.size(); i++) {
+				Point a = path.get(i - 1);
+				Point b = path.get(i);
+				if (Math.max(a.x(), b.x()) >= 380 && Math.min(a.x(), b.x()) <= 420
+						&& Math.max(a.z(), b.z()) >= 180 && Math.min(a.z(), b.z()) <= 220) {
+					return false;
+				}
+			}
+			return true;
+		};
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		exploreAll(planner, List.of(village(1, 0, 0), village(2, 800, 400)), obstacle);
+		assertEquals(1, planner.links().size());
+		assertTrue(obstacle.accepts(planner.links().getFirst().path()));
 	}
 
 	@Test
 	void lineDoesNotCutThroughAThirdVillage() {
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
-		planner.addVillages(List.of(village(1, 0, 0), village(2, 1000, 0), village(3, 500, 0)), ACCEPT_ALL);
+		exploreAll(planner, List.of(village(1, 0, 0), village(2, 1000, 0), village(3, 500, 0)), ACCEPT_ALL);
 		assertFalse(planner.links().stream().anyMatch(link -> link.connects(1) && link.other(1) == 2));
 		assertNetworkRules(planner);
+	}
+
+	/** Explores a square: marks it and adds the villages whose center lies in it. */
+	private static List<Link> explore(NetworkPlanner planner, List<Village> villages, int minX, int minZ, int maxX, int maxZ,
+			NetworkPlanner.PathFilter filter) {
+		planner.markExplored(minX, minZ, maxX, maxZ);
+		List<Village> inside = villages.stream()
+				.filter(village -> village.center().x() >= minX && village.center().x() <= maxX
+						&& village.center().z() >= minZ && village.center().z() <= maxZ)
+				.toList();
+		return planner.addVillages(inside, filter);
+	}
+
+	private static List<Link> exploreAll(NetworkPlanner planner, List<Village> villages, NetworkPlanner.PathFilter filter) {
+		return explore(planner, villages, -6000, -6000, 10000, 10000, filter);
 	}
 
 	private static void assertNetworkRules(NetworkPlanner planner) {
@@ -112,7 +191,8 @@ class NetworkPlannerTest {
 			degree.merge(link.to(), 1, Integer::sum);
 			Village a = byId.get(link.from());
 			Village b = byId.get(link.to());
-			assertTrue(a.center().distanceSq(b.center()) <= (long) SETTINGS.maxLength() * SETTINGS.maxLength());
+			long maxLength = link.trunk() ? SETTINGS.maxGroupLength() : SETTINGS.maxLength();
+			assertTrue(a.center().distanceSq(b.center()) <= maxLength * maxLength);
 			RouteStepperTest.assertAxisAligned(link.path(), link.path().getFirst(), link.path().getLast());
 			for (Village other : byId.values()) {
 				if (other.id() == a.id() || other.id() == b.id()) {

@@ -23,11 +23,22 @@ public final class RouteStepper {
 
 	/** Same as {@link #route(Point, Point, PlannerSettings)} with the main axis given: x when {@code mainIsX}. */
 	public static List<Point> route(Point from, Point to, boolean mainIsX, PlannerSettings settings) {
+		return route(from, to, mainIsX, 0, settings);
+	}
+
+	/**
+	 * A route with every side step moved {@code shift} blocks along the main axis, towards the end when positive. The
+	 * staircase keeps its shape and slides between the two fixed ends, which is how a line steps around an obstacle.
+	 * The shift is cut down so no main-axis straight gets shorter than {@code minRun}.
+	 */
+	public static List<Point> route(Point from, Point to, boolean mainIsX, int shift, PlannerSettings settings) {
 		int dx = to.x() - from.x();
 		int dz = to.z() - from.z();
 		int main = mainIsX ? dx : dz;
 		int side = mainIsX ? dz : dx;
 		int steps = sideSteps(Math.abs(main), Math.abs(side), settings);
+		int room = Math.max(0, Math.abs(main) / (steps + 1) - settings.minRun());
+		int offset = Integer.signum(main) * Math.clamp(shift, -room, room);
 
 		List<Point> corners = new ArrayList<>();
 		corners.add(from);
@@ -35,7 +46,7 @@ public final class RouteStepper {
 		int sideStart = mainIsX ? from.z() : from.x();
 		int sidePos = sideStart;
 		for (int i = 1; i <= steps + 1; i++) {
-			int mainPos = mainStart + (int) Math.round((double) main * i / (steps + 1));
+			int mainPos = mainStart + (int) Math.round((double) main * i / (steps + 1)) + (i <= steps ? offset : 0);
 			add(corners, mainIsX ? new Point(mainPos, sidePos) : new Point(sidePos, mainPos));
 			if (i <= steps) {
 				sidePos = sideStart + (int) Math.round((double) side * i / steps);

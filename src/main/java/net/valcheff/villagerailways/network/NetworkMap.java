@@ -23,6 +23,9 @@ public final class NetworkMap {
 	private static final Color VILLAGE = new Color(0xF28C28);
 	private static final Color PLANNED = new Color(0x202020);
 	private static final Color BUILT = new Color(0x2E7D32);
+	private static final Color TRUNK = new Color(0x7B1FA2);
+	private static final Color OBSTACLE = new Color(0xD64545);
+	private static final Color OBSTACLE_LABEL = new Color(0x9E2B2B);
 	private static final Color LABEL = new Color(0x555555);
 
 	private NetworkMap() {
@@ -34,7 +37,18 @@ public final class NetworkMap {
 		boolean isOcean(int x, int z);
 	}
 
-	public static Path write(NetworkPlanner planner, OceanTest ocean, Path file) throws IOException {
+	/** An area the network keeps out of, such as a structure, as minX, minZ, maxX, maxZ with a name. */
+	public record Obstacle(String name, int minX, int minZ, int maxX, int maxZ) {
+	}
+
+	/** Obstacles in a block area, looked up once the map knows its extent. */
+	@FunctionalInterface
+	public interface ObstacleSource {
+		List<Obstacle> obstaclesIn(int minX, int minZ, int maxX, int maxZ);
+	}
+
+	public static Path write(NetworkPlanner planner, OceanTest ocean, ObstacleSource obstacles, Path file)
+			throws IOException {
 		List<Village> villages = planner.villages();
 		List<Link> links = planner.links();
 		int minX = villages.stream().mapToInt(Village::minX).min().orElse(0);
@@ -68,9 +82,18 @@ public final class NetworkMap {
 			int y = px(village.minZ(), minZ, scale);
 			g.fillRect(x, y, Math.max(2, px(village.maxX(), minX, scale) - x), Math.max(2, px(village.maxZ(), minZ, scale) - y));
 		}
+		g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
+		for (Obstacle obstacle : obstacles.obstaclesIn(minX, minZ, maxX, maxZ)) {
+			int x = px(obstacle.minX(), minX, scale);
+			int y = px(obstacle.minZ(), minZ, scale);
+			g.setColor(OBSTACLE);
+			g.fillRect(x, y, Math.max(3, px(obstacle.maxX(), minX, scale) - x), Math.max(3, px(obstacle.maxZ(), minZ, scale) - y));
+			g.setColor(OBSTACLE_LABEL);
+			g.drawString(obstacle.name().replace("minecraft:", ""), x + 5, y + 12);
+		}
 		g.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		for (Link link : links) {
-			g.setColor(link.status() == Link.Status.BUILT ? BUILT : PLANNED);
+			g.setColor(link.status() == Link.Status.BUILT ? BUILT : link.trunk() ? TRUNK : PLANNED);
 			List<Point> path = link.path();
 			for (int i = 1; i < path.size(); i++) {
 				g.drawLine(px(path.get(i - 1).x(), minX, scale), px(path.get(i - 1).z(), minZ, scale),

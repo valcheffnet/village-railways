@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -34,7 +35,8 @@ public final class NetworkStore {
 		}
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
 			Saved saved = GSON.fromJson(reader, Saved.class);
-			return new NetworkPlanner(settings, saved.villages(), saved.links());
+			return new NetworkPlanner(settings, saved.villages(), saved.links(), orEmpty(saved.exploredCells()),
+					saved.partlyExplored() == null ? Map.of() : saved.partlyExplored(), orEmpty(saved.deferred()));
 		}
 	}
 
@@ -42,11 +44,17 @@ public final class NetworkStore {
 		Files.createDirectories(file.getParent());
 		Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
 		try (Writer writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
-			GSON.toJson(new Saved(1, planner.villages(), planner.links()), writer);
+			GSON.toJson(new Saved(1, planner.villages(), planner.links(), planner.exploredCells(),
+					planner.partlyExploredCells(), planner.deferredPairs()), writer);
 		}
 		Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 	}
 
-	private record Saved(int version, List<Village> villages, List<Link> links) {
+	private static <T> List<T> orEmpty(List<T> list) {
+		return list == null ? List.of() : list;
+	}
+
+	private record Saved(int version, List<Village> villages, List<Link> links, List<Long> exploredCells,
+			Map<Long, long[]> partlyExplored, List<NetworkPlanner.VillagePair> deferred) {
 	}
 }
