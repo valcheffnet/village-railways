@@ -3,6 +3,8 @@ package net.valcheff.villagerailways.command;
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +23,8 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.valcheff.villagerailways.VillageRailways;
+import net.valcheff.villagerailways.network.NetworkMap;
+import net.valcheff.villagerailways.network.RailwayNetwork;
 import net.valcheff.villagerailways.village.PredictedVillage;
 import net.valcheff.villagerailways.village.VillagePredictor;
 
@@ -31,6 +35,8 @@ import net.valcheff.villagerailways.village.VillagePredictor;
  *   <li>{@code /villagerailways villages [radius]} lists the predicted villages around the caller.</li>
  *   <li>{@code /villagerailways verify [radius]} generates every candidate chunk up to structure starts and compares
  *       the real village starts with the prediction. Meant for test worlds: it creates chunks.</li>
+ *   <li>{@code /villagerailways network [radius]} plans lines for the villages around the caller and draws the whole
+ *       network to {@code village_railways/network.png} in the world folder.</li>
  * </ul>
  */
 public final class VillageRailwaysCommand {
@@ -49,7 +55,31 @@ public final class VillageRailwaysCommand {
 				.then(literal("verify")
 						.executes(context -> verify(context, DEFAULT_RADIUS))
 						.then(argument("radius", IntegerArgumentType.integer(16, 5000))
-								.executes(context -> verify(context, IntegerArgumentType.getInteger(context, "radius"))))));
+								.executes(context -> verify(context, IntegerArgumentType.getInteger(context, "radius")))))
+				.then(literal("network")
+						.executes(context -> plan(context, DEFAULT_RADIUS))
+						.then(argument("radius", IntegerArgumentType.integer(16, 20000))
+								.executes(context -> plan(context, IntegerArgumentType.getInteger(context, "radius"))))));
+	}
+
+	private static int plan(CommandContext<CommandSourceStack> context, int radius) {
+		CommandSourceStack source = context.getSource();
+		ServerLevel overworld = source.getServer().overworld();
+		RailwayNetwork network = VillageRailways.network(overworld);
+		try {
+			long started = System.nanoTime();
+			RailwayNetwork.Result result = network.explore(BlockPos.containing(source.getPosition()), radius);
+			long millis = (System.nanoTime() - started) / 1_000_000;
+			Path map = NetworkMap.write(network.planner(), network.oceanFilter()::isOcean, network.folder().resolve("network.png"));
+			source.sendSuccess(() -> Component.literal(result.newVillages() + " new villages, " + result.newLinks()
+					+ " new lines (" + millis + " ms). Network: " + result.villages() + " villages, " + result.links()
+					+ " lines. Turned down: " + result.rejections() + ". Map: " + map.toAbsolutePath()), false);
+			return result.newLinks();
+		} catch (IOException e) {
+			VillageRailways.LOGGER.error("Could not save the railway network", e);
+			source.sendFailure(Component.literal("Could not save the railway network: " + e.getMessage()));
+			return 0;
+		}
 	}
 
 	private static int listVillages(CommandContext<CommandSourceStack> context, int radius) {
