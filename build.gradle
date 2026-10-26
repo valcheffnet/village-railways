@@ -1,0 +1,49 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+base {
+	archivesName = 'village-railways'
+}
+
+loom {
+	// Server-side only: compile against the server jar so any client class reference fails the build.
+	serverOnlyMinecraftJar()
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+def templateProps = [
+	version          : project.version,
+	minecraft_version: project.minecraft_version,
+	java_version     : project.java_version,
+]
+
+processResources {
+	inputs.properties templateProps
+	filesMatching("fabric.mod.json") {
+		expand templateProps
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.encoding = 'UTF-8'
+	it.options.release = project.java_version as int
+}
+
+tasks.withType(Test).configureEach {
+	useJUnitPlatform()
+}
+
+java {
+	sourceCompatibility = JavaVersion.toVersion(project.java_version)
+	targetCompatibility = JavaVersion.toVersion(project.java_version)
+	withSourcesJar()
+}

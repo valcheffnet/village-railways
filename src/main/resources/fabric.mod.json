@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "village_railways",
+	"version": "${version}",
+	"name": "Village Railways",
+	"description": "Links villages with minecart railway lines built from vanilla blocks. Server-side only: vanilla clients can join without the mod.",
+	"authors": [
+		"SasnycoN"
+	],
+	"environment": "server",
+	"entrypoints": {
+		"main": [
+			"net.valcheff.villagerailways.VillageRailways"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.0",
+		"fabric-api": "*",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}"
+	}
+}
