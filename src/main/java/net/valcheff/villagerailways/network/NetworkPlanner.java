@@ -19,14 +19,18 @@ import java.util.function.LongConsumer;
  *
  * <p>Villages arrive in batches as the world is explored. Each batch is joined to the network greedily, shortest
  * line first, so a village links to its nearest neighbours and, when those already have their lines, to farther
- * ones within the maximum length. A line is only added when both villages have a free slot, it leaves each village
- * at a fair angle from that village's other lines, its stepped path keeps clear of every other line, it does not
- * pass through a village it does not serve, and the path filter accepts it (no open ocean, for example). Lines are
- * never removed, so the network only grows. The result is planar: no two lines ever cross.
+ * ones within the maximum length. A line is only added when both villages have a free slot at their station, its
+ * stepped path keeps clear of every other line and out of every village, and the path filter accepts it (no open
+ * ocean, for example). Lines are never removed, so the network only grows. The result is planar: no two lines ever
+ * cross.
  *
  * <p>Nearest-neighbour lines leave groups of villages apart where the gaps are wider than the maximum length. After
  * every batch each such group is joined to its nearest other groups, up to {@code maxGroupLinks} of them, by one trunk
  * line each, which may be as long as {@code maxGroupLength} and follows the same rules otherwise.
+ *
+ * <p>Every village has one station, just outside it on the side facing its nearest neighbours, where all its lines
+ * meet; see {@link StationLayout}. A line leaves the station from a free slot, round the village when its other
+ * village lies behind it ({@link ExitFinder}), and runs on in the open.
  *
  * <p>Villages and line segments are kept in grids, so the work for a new village depends on its surroundings only,
  * not on how much of the world is already planned.
@@ -38,21 +42,36 @@ public class NetworkPlanner {
 		boolean accepts(List<Point> path);
 	}
 
+	/** How bad a route is, lower is better; the planner tries the routes for a line in this order. */
+	@FunctionalInterface
+	public interface RouteScorer {
+		double score(List<Point> path);
+	}
+
+	/** Without terrain to go by: fewer corners first. */
+	public static final RouteScorer FEWEST_CORNERS = path -> path.size();
+
 	/** Why a possible line was not planned. */
 	public enum Rejection {
 		NO_FREE_SLOT,
-		SHARP_ANGLE,
-		STATIONS_TOO_CLOSE,
+		NO_STATION,
+		NO_WAY_OUT,
 		THROUGH_VILLAGE,
 		TOO_CLOSE_TO_LINE,
 		FILTERED
 	}
 
 	private static final int LINK_CELL = 256;
-	/** Slides of the staircase tried, in order, when the plain one is blocked. */
-	private static final int[] ROUTE_SHIFTS = {0, 16, -16, 32, -32, 48, -48};
-	/** Slides of one station along its village edge, tried when no staircase gets through. */
-	private static final int[] STATION_SHIFTS = {0, 16, -16, 32, -32};
+	/**
+	 * Closest two lines may come anywhere, as two tracks side by side: their corridors share the strip between them.
+	 */
+	private static final int DOUBLE_TRACK = 2;
+	/** How far out of its village's footprint a line leaves the village before it heads off. */
+	private static final int EXIT_MARGIN = 24;
+	/** Longest way out of a village. */
+	private static final int MAX_EXIT_LENGTH = 800;
+	/** Gap a line keeps from the footprints of the villages it serves, away from their stations. */
+	private static final int SERVED_MARGIN = 4;
 	/** Village pairs tried, closest first, before giving up on joining two groups. */
 	private static final int GROUP_LINK_TRIES = 6;
 	/** Farthest a village footprint reaches from its center; vanilla villages stay well inside it. */
@@ -66,6 +85,12 @@ public class NetworkPlanner {
 	private final PlannerSettings settings;
 	private final Map<Long, Village> villages = new LinkedHashMap<>();
 	private final List<Link> links = new ArrayList<>();
+	/** The station tracks of the villages; {@link Link#from} is the village. */
+	private final List<Link> stations = new ArrayList<>();
+	private final Map<Long, List<Integer>> stationGrid = new HashMap<>();
+	private final Map<Long, Integer> stationByVillage = new HashMap<>();
+	/** Ways out of villages already found, by village, slot and side, until the village gets another line. */
+	private final Map<ExitKey, List<Point>> exits = new HashMap<>();
 	private final Map<Long, List<Village>> villageGrid = new HashMap<>();
 	private final Map<Long, List<Integer>> linkGrid = new HashMap<>();
 	private final Map<Long, List<Integer>> linksByVillage = new HashMap<>();
@@ -74,17 +99,25 @@ public class NetworkPlanner {
 	private final Set<VillagePair> deferred = new HashSet<>();
 	private final Set<VillagePair> failedTrunks = new HashSet<>();
 	private final Map<Rejection, Integer> lastRejections = new EnumMap<>(Rejection.class);
+	private RouteScorer scorer = FEWEST_CORNERS;
 
 	public NetworkPlanner(PlannerSettings settings) {
 		this.settings = settings;
 	}
 
+	/** Sets how routes are ranked; the default only counts corners. */
+	public synchronized void setRouteScorer(RouteScorer scorer) {
+		this.scorer = scorer;
+	}
+
 	/** Restores a saved network as it was, without re-checking it. */
 	public NetworkPlanner(PlannerSettings settings, Collection<Village> savedVillages, Collection<Link> savedLinks,
-			Collection<Long> savedExploredCells, Map<Long, long[]> savedPartlyExplored, Collection<VillagePair> savedDeferred) {
+			Collection<Link> savedStations, Collection<Long> savedExploredCells, Map<Long, long[]> savedPartlyExplored,
+			Collection<VillagePair> savedDeferred) {
 		this(settings);
 		savedVillages.forEach(this::addToGrid);
 		savedLinks.forEach(this::addLink);
+		savedStations.forEach(this::addStation);
 		exploredCells.addAll(savedExploredCells);
 		savedPartlyExplored.forEach((key, bits) -> partlyExplored.put(key, bits.clone()));
 		deferred.addAll(savedDeferred);
@@ -92,7 +125,7 @@ public class NetworkPlanner {
 
 	/** Two villages in a fixed order, so A-B and B-A are the same pair. */
 	public record VillagePair(long first, long second) {
-		static VillagePair of(long a, long b) {
+		public static VillagePair of(long a, long b) {
 			return new VillagePair(Math.min(a, b), Math.max(a, b));
 		}
 	}
@@ -145,12 +178,46 @@ public class NetworkPlanner {
 		}
 	}
 
+	/** Whether every chunk of the given block area is explored. */
+	public synchronized boolean isAreaExplored(int minX, int minZ, int maxX, int maxZ) {
+		for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
+			for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
+				long cell = cellKey(Math.floorDiv(chunkX, CHUNKS_PER_CELL), Math.floorDiv(chunkZ, CHUNKS_PER_CELL));
+				if (exploredCells.contains(cell)) {
+					continue;
+				}
+				long[] bits = partlyExplored.get(cell);
+				int bit = Math.floorMod(chunkX, CHUNKS_PER_CELL) * CHUNKS_PER_CELL + Math.floorMod(chunkZ, CHUNKS_PER_CELL);
+				if (bits == null || (bits[bit >> 6] & (1L << (bit & 63))) == 0) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	public synchronized List<Village> villages() {
 		return List.copyOf(villages.values());
 	}
 
 	public synchronized List<Link> links() {
 		return List.copyOf(links);
+	}
+
+	public synchronized List<Link> stations() {
+		return List.copyOf(stations);
+	}
+
+	public synchronized boolean isStation(VillagePair key) {
+		Integer index = stationByVillage.get(key.first());
+		Integer other = stationByVillage.get(key.second());
+		return index != null && stations.get(index).key().equals(key) || other != null && stations.get(other).key().equals(key);
+	}
+
+	/** The station track of a village, or null while it has no line. */
+	public synchronized Link stationOf(long village) {
+		Integer index = stationByVillage.get(village);
+		return index == null ? null : stations.get(index);
 	}
 
 	public synchronized boolean knows(long villageId) {
@@ -161,7 +228,7 @@ public class NetworkPlanner {
 	 * Adds the villages not seen before and plans the lines they make possible, together with lines that waited for
 	 * their surroundings to be explored. Call {@link #markExplored} for the area the batch comes from first.
 	 *
-	 * @return the new lines, in the order they were planned
+	 * @return the new lines and the stations they need, in the order they were planned
 	 */
 	public synchronized List<Link> addVillages(Collection<Village> batch, PathFilter filter) {
 		Set<Long> freshIds = new HashSet<>();
@@ -198,7 +265,7 @@ public class NetworkPlanner {
 				continue;
 			}
 			deferred.remove(pair);
-			Link link = tryLink(a, b, filter, false);
+			Link link = tryLink(a, b, filter, false, added);
 			if (link != null) {
 				addLink(link);
 				added.add(link);
@@ -270,7 +337,7 @@ public class NetworkPlanner {
 					continue;
 				}
 				tries++;
-				Link link = tryLink(a, b, filter, true);
+				Link link = tryLink(a, b, filter, true, added);
 				if (link == null) {
 					failedTrunks.add(pair);
 					continue;
@@ -351,140 +418,266 @@ public class NetworkPlanner {
 		return Map.copyOf(lastRejections);
 	}
 
-	/** Marks the line between two villages as built. */
-	public synchronized void markBuilt(Link link) {
-		int index = links.indexOf(link);
-		if (index >= 0) {
-			links.set(index, link.withStatus(Link.Status.BUILT));
+	/** Sets the status of the line or station with the given key. */
+	public synchronized void setStatus(VillagePair key, Link.Status status) {
+		for (int i = 0; i < links.size(); i++) {
+			if (links.get(i).key().equals(key)) {
+				links.set(i, links.get(i).withStatus(status));
+			}
+		}
+		for (int i = 0; i < stations.size(); i++) {
+			if (stations.get(i).key().equals(key)) {
+				stations.set(i, stations.get(i).withStatus(status));
+			}
 		}
 	}
 
-	private Link tryLink(Village a, Village b, PathFilter filter, boolean trunk) {
+	/** Which way out of which station a found way belongs to: by slot and the side of the village it leaves from. */
+	private record ExitKey(long village, Point station, StationLayout.Slot slot, int side) {
+	}
+
+	/**
+	 * The station of a village. Once the village has a line it stays where it is; until then this is where it would
+	 * go, not yet kept: on the side that faces the village's nearest neighbours best, among the sides where the track
+	 * keeps out of other villages and clear of other tracks and the filter accepts it. Null when no side has room.
+	 */
+	private Link stationFor(Village village, PathFilter filter) {
+		Link known = stationOf(village.id());
+		if (known != null) {
+			return known;
+		}
+		List<Point> neighbours = villagesNear(village.center(), settings.maxGroupLength()).stream()
+				.filter(other -> other.id() != village.id())
+				.sorted(Comparator.comparingLong(other -> other.center().distanceSq(village.center())))
+				.limit(settings.maxLinks())
+				.map(Village::center)
+				.toList();
+		for (StationLayout.Station station : StationLayout.candidates(village, neighbours, settings.stationMargin())) {
+			List<Point> track = trackFacingVillage(station);
+			if (clearOfOtherVillages(village, track) && !comesTooClose(track, village, village) && filter.accepts(track)) {
+				return new Link(village.id(), stationId(village.id(), station.middle()), track, Link.Status.PLANNED, false);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The track of a station, run the way that has the village on its right: the side the builder puts a halt on, so
+	 * the station building stands between the track and the village.
+	 */
+	private static List<Point> trackFacingVillage(StationLayout.Station station) {
+		List<Point> track = station.track();
+		// Going from the first end to the second, the right is the way along turned clockwise.
+		boolean villageOnRight = (station.along() + 1) % 4 == (station.out() + 2) % 4;
+		return villageOnRight ? track : track.reversed();
+	}
+
+	/**
+	 * The slots of a village's station no line uses yet. A station is built only as far as its lines need, so once it is
+	 * built no slot is free.
+	 */
+	private List<StationLayout.Slot> freeSlots(Village village, Link station, StationLayout.Station layout) {
+		List<StationLayout.Slot> free = new ArrayList<>();
+		if (station.status() != Link.Status.PLANNED) {
+			return free;
+		}
+		for (StationLayout.Slot slot : StationLayout.Slot.values()) {
+			if (!isUsed(village, layout.end(slot))) {
+				free.add(slot);
+			}
+		}
+		return free;
+	}
+
+	private boolean isUsed(Village village, Point slot) {
+		return linksOf(village.id()).stream()
+				.anyMatch(link -> link.path().getFirst().equals(slot) || link.path().getLast().equals(slot));
+	}
+
+	/**
+	 * The corners of the way a line leaves a station slot towards {@code target}: from the slot, round the village
+	 * where need be, out past the side of the village facing the target. Null when no way fits.
+	 */
+	private List<Point> wayOut(Village village, StationLayout.Station station, StationLayout.Slot slot, Point target) {
+		int dx = target.x() - village.center().x();
+		int dz = target.z() - village.center().z();
+		int side = Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 0 : 2) : (dz >= 0 ? 1 : 3);
+		ExitKey key = new ExitKey(village.id(), station.middle(), slot, side);
+		if (!exits.containsKey(key)) {
+			exits.put(key, findWayOut(village, station, slot, side));
+		}
+		return exits.get(key);
+	}
+
+	private List<Point> findWayOut(Village village, StationLayout.Station station, StationLayout.Slot slot, int side) {
+		int beyond = switch (side) {
+			case 0 -> village.maxX() + EXIT_MARGIN;
+			case 1 -> village.maxZ() + EXIT_MARGIN;
+			case 2 -> village.minX() - EXIT_MARGIN;
+			default -> village.minZ() - EXIT_MARGIN;
+		};
+		int reach = EXIT_MARGIN + settings.villageMargin();
+		int[] area = {village.minX() - reach, village.minZ() - reach, village.maxX() + reach, village.maxZ() + reach};
+		// The footprint and the band just round it are closed, all but the strip the station stands on.
+		ExitGrid grid = new ExitGrid(area, List.of(new Box(village.minX(), village.minZ(), village.maxX(), village.maxZ())),
+				settings.stationMargin() - 1);
+		tracksIn(area[0], area[1], area[2], area[3], linkGrid, links).forEach(link -> grid.addTrack(link.path()));
+		List<List<Point>> stationTracks = new ArrayList<>(List.of(station.track()));
+		tracksIn(area[0], area[1], area[2], area[3], stationGrid, stations).forEach(track -> stationTracks.add(track.path()));
+		for (List<Point> path : stationTracks) {
+			// In two halves, so the middle slot is an end too, where a way may start.
+			grid.addTrack(List.of(path.get(0), path.get(1)));
+			grid.addTrack(List.of(path.get(1), path.get(2)));
+		}
+		Point start = station.end(slot);
+		return ExitFinder.leave(start, station.leaving(slot), side, beyond, area, grid.blocked(List.of(start)),
+				MAX_EXIT_LENGTH);
+	}
+
+	private boolean clearOfOtherVillages(Village village, List<Point> route) {
+		int[] box = bounds(route);
+		int reach = MAX_VILLAGE_REACH + settings.villageMargin();
+		for (Village other : villagesIn(box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach)) {
+			for (int i = 1; i < route.size() && other.id() != village.id(); i++) {
+				if (other.touches(route.get(i - 1), route.get(i), settings.villageMargin())) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * An id for the second end of a station's key, which no village has: a village id is a packed start chunk, whose
+	 * low half is a chunk x, never between 2^30 and 2^31.
+	 */
+	private static long stationId(long village, Point middle) {
+		int hash = Long.hashCode(village) * 31 + middle.hashCode();
+		return ((long) hash << 32) | 0x40000000L | (Integer.toUnsignedLong(Integer.rotateLeft(hash, 7)) & 0x3FFFFFFFL);
+	}
+
+	/**
+	 * A line between two villages, from a free slot of one's station to a free slot of the other's: out of each village
+	 * and on through the open in stepped straights, the best of the routes that keep clear of every village and track,
+	 * by the route scorer, that the filter accepts. A village's station is kept with its first line, and goes into
+	 * {@code added} before it.
+	 */
+	private Link tryLink(Village a, Village b, PathFilter filter, boolean trunk, List<Link> added) {
 		if (linksOf(a.id()).size() >= settings.maxLinks() || linksOf(b.id()).size() >= settings.maxLinks()
 				|| linked(a.id(), b.id())) {
 			return reject(Rejection.NO_FREE_SLOT);
 		}
-		// The line runs along the axis its stations face, even when the stations alone would suggest the other one.
-		boolean mainIsX = Math.abs(b.center().x() - a.center().x()) >= Math.abs(b.center().z() - a.center().z());
-		Point[] aligned = align(a, station(a, b.center()), b, station(b, a.center()), mainIsX);
-		Rejection firstReason = null;
-		// Move station A first, then station B; one at a time keeps the number of tries small.
-		for (int end = 0; end < 2; end++) {
-			for (int stationShift : STATION_SHIFTS) {
-				if (end == 1 && stationShift == 0) {
+		Link stationA = stationFor(a, filter);
+		Link stationB = stationFor(b, filter);
+		if (stationA == null || stationB == null) {
+			return reject(Rejection.NO_STATION);
+		}
+		StationLayout.Station layoutA = StationLayout.of(stationA.path(), a);
+		StationLayout.Station layoutB = StationLayout.of(stationB.path(), b);
+		List<StationLayout.Slot> slotsA = freeSlots(a, stationA, layoutA);
+		List<StationLayout.Slot> slotsB = freeSlots(b, stationB, layoutB);
+		if (slotsA.isEmpty() || slotsB.isEmpty()) {
+			return reject(Rejection.NO_FREE_SLOT);
+		}
+		RouteChoice choice = bestRoute(a, b, layoutA, layoutB, slotsA, slotsB, filter);
+		if (choice.path() == null) {
+			return reject(choice.reason());
+		}
+		for (Link station : List.of(stationA, stationB)) {
+			if (stationOf(station.from()) == null) {
+				addStation(station);
+				added.add(station);
+			}
+		}
+		return new Link(a.id(), b.id(), choice.path(), Link.Status.PLANNED, trunk);
+	}
+
+	/** The route a line takes, or else why none fits. */
+	private record RouteChoice(List<Point> path, Rejection reason) {
+	}
+
+	/**
+	 * The best route between two villages from the given station slots, by the route scorer, that keeps clear of every
+	 * village and track and that the filter accepts.
+	 */
+	private RouteChoice bestRoute(Village a, Village b, StationLayout.Station layoutA, StationLayout.Station layoutB,
+			List<StationLayout.Slot> slotsA, List<StationLayout.Slot> slotsB, PathFilter filter) {
+		// Every route shape out of every pair of free slots. The cheap checks go first, so only routes that could be
+		// built are scored on the terrain; then the world checks run in score order.
+		Set<List<Point>> routes = new LinkedHashSet<>();
+		for (StationLayout.Slot slotA : slotsA) {
+			for (StationLayout.Slot slotB : slotsB) {
+				List<Point> outA = wayOut(a, layoutA, slotA, b.center());
+				List<Point> outB = wayOut(b, layoutB, slotB, a.center());
+				if (outA == null || outB == null) {
 					continue;
 				}
-				Point stationA = end == 0 ? slide(a, aligned[0], stationShift, mainIsX) : aligned[0];
-				Point stationB = end == 1 ? slide(b, aligned[1], stationShift, mainIsX) : aligned[1];
-				Rejection reason;
-				if (!angleIsFree(a, stationA) || !angleIsFree(b, stationB)) {
-					reason = Rejection.SHARP_ANGLE;
-				} else if (stationIsCrowded(a, stationA) || stationIsCrowded(b, stationB)) {
-					reason = Rejection.STATIONS_TOO_CLOSE;
-				} else {
-					PathResult result = findPath(a, stationA, b, stationB, mainIsX, filter);
-					if (result.path() != null) {
-						return new Link(a.id(), b.id(), result.path(), Link.Status.PLANNED, trunk);
+				Point fromA = outA.getLast();
+				Point fromB = outB.getLast();
+				boolean mainIsX = Math.abs(fromB.x() - fromA.x()) >= Math.abs(fromB.z() - fromA.z());
+				for (List<Point> open : RouteStepper.candidates(fromA, fromB, mainIsX, settings)) {
+					List<Point> route = joined(outA, open, outB.reversed());
+					if (route != null) {
+						routes.add(route);
 					}
-					reason = result.reason();
-				}
-				if (firstReason == null) {
-					firstReason = reason;
 				}
 			}
 		}
-		return reject(firstReason);
-	}
-
-	/** A path that passed every check, or the reason the first try failed. */
-	private record PathResult(List<Point> path, Rejection reason) {
-	}
-
-	/** The first staircase slide between two stations that passes every check. */
-	private PathResult findPath(Village a, Point stationA, Village b, Point stationB, boolean mainIsX, PathFilter filter) {
+		if (routes.isEmpty()) {
+			return new RouteChoice(null, Rejection.NO_WAY_OUT);
+		}
 		Rejection firstReason = null;
-		List<Point> previous = null;
-		for (int shift : ROUTE_SHIFTS) {
-			List<Point> path = RouteStepper.route(stationA, stationB, mainIsX, shift, settings);
-			if (path.equals(previous)) {
-				continue;
-			}
-			previous = path;
+		Map<List<Point>, Double> scores = new HashMap<>();
+		for (List<Point> path : routes) {
 			Rejection reason = passesThroughVillage(path, a, b) ? Rejection.THROUGH_VILLAGE
 					: comesTooClose(path, a, b) ? Rejection.TOO_CLOSE_TO_LINE
-					: !filter.accepts(path) ? Rejection.FILTERED
 					: null;
 			if (reason == null) {
-				return new PathResult(path, null);
-			}
-			if (firstReason == null) {
+				scores.put(path, scorer.score(path));
+			} else if (firstReason == null) {
 				firstReason = reason;
 			}
 		}
-		return new PathResult(null, firstReason);
-	}
-
-	/** A station moved {@code shift} blocks along its village edge, kept within the footprint's side. */
-	private static Point slide(Village village, Point station, int shift, boolean mainIsX) {
-		if (shift == 0) {
-			return station;
+		List<List<Point>> ranked = new ArrayList<>(scores.keySet());
+		ranked.sort(Comparator.comparingDouble(scores::get));
+		for (List<Point> path : ranked) {
+			if (filter.accepts(path)) {
+				return new RouteChoice(path, null);
+			}
+			firstReason = Rejection.FILTERED;
 		}
-		return mainIsX ? new Point(station.x(), Math.clamp((long) station.z() + shift, village.minZ(), village.maxZ()))
-				: new Point(Math.clamp((long) station.x() + shift, village.minX(), village.maxX()), station.z());
+		return new RouteChoice(null, firstReason);
 	}
 
 	/**
-	 * Slides one station along its village edge so both stations line up when they are only a short side step apart:
-	 * a straight line beats a jog of a few blocks. Stations stay within their village's side of the footprint.
+	 * The corners of routes laid end to end, or null where one would turn back on itself at the joint. Points in the
+	 * middle of a straight are dropped.
 	 */
-	private Point[] align(Village a, Point stationA, Village b, Point stationB, boolean mainIsX) {
-		int sideA = mainIsX ? stationA.z() : stationA.x();
-		int sideB = mainIsX ? stationB.z() : stationB.x();
-		int gap = Math.abs(sideB - sideA);
-		if (gap == 0 || gap >= settings.minRun()) {
-			return new Point[] {stationA, stationB};
-		}
-		int minB = mainIsX ? b.minZ() : b.minX();
-		int maxB = mainIsX ? b.maxZ() : b.maxX();
-		if (sideA >= minB && sideA <= maxB) {
-			return new Point[] {stationA, mainIsX ? new Point(stationB.x(), sideA) : new Point(sideA, stationB.z())};
-		}
-		int minA = mainIsX ? a.minZ() : a.minX();
-		int maxA = mainIsX ? a.maxZ() : a.maxX();
-		if (sideB >= minA && sideB <= maxA) {
-			return new Point[] {mainIsX ? new Point(stationA.x(), sideB) : new Point(sideB, stationA.z()), stationB};
-		}
-		return new Point[] {stationA, stationB};
-	}
-
-	private boolean stationIsCrowded(Village village, Point station) {
-		long spacingSq = (long) settings.stationSpacing() * settings.stationSpacing();
-		for (Link link : linksOf(village.id())) {
-			Point otherStation = link.from() == village.id() ? link.path().getFirst() : link.path().getLast();
-			if (otherStation.distanceSq(station) < spacingSq) {
-				return true;
+	@SafeVarargs
+	private static List<Point> joined(List<Point>... parts) {
+		List<Point> points = new ArrayList<>();
+		for (List<Point> part : parts) {
+			for (Point point : part) {
+				if (points.isEmpty() || !points.getLast().equals(point)) {
+					points.add(point);
+				}
 			}
 		}
-		return false;
-	}
-
-	/**
-	 * Where the station of {@code village} goes for a line towards {@code target}: just outside the footprint, on the
-	 * side the line leaves from, as close to the straight line between the two centers as the footprint allows.
-	 */
-	Point station(Village village, Point target) {
-		Point center = village.center();
-		int dx = target.x() - center.x();
-		int dz = target.z() - center.z();
-		int margin = settings.stationMargin();
-		if (Math.abs(dx) >= Math.abs(dz)) {
-			int edgeX = dx >= 0 ? village.maxX() + margin : village.minX() - margin;
-			int z = center.z() + (int) Math.round((double) dz * (edgeX - center.x()) / dx);
-			return new Point(edgeX, Math.clamp(z, village.minZ(), village.maxZ()));
+		List<Point> corners = new ArrayList<>();
+		for (Point point : points) {
+			if (corners.size() >= 2) {
+				int before = ExitFinder.direction(corners.get(corners.size() - 2), corners.getLast());
+				int after = ExitFinder.direction(corners.getLast(), point);
+				if (before == (after + 2) % 4) {
+					return null;
+				}
+				if (before == after) {
+					corners.removeLast();
+				}
+			}
+			corners.add(point);
 		}
-		int edgeZ = dz >= 0 ? village.maxZ() + margin : village.minZ() - margin;
-		int x = center.x() + (int) Math.round((double) dx * (edgeZ - center.z()) / dz);
-		return new Point(Math.clamp(x, village.minX(), village.maxX()), edgeZ);
+		return List.copyOf(corners);
 	}
 
 	private Link reject(Rejection reason) {
@@ -492,25 +685,20 @@ public class NetworkPlanner {
 		return null;
 	}
 
-	private boolean angleIsFree(Village village, Point station) {
-		double angle = direction(village.center(), station);
-		for (Link link : linksOf(village.id())) {
-			Point otherStation = link.from() == village.id() ? link.path().getFirst() : link.path().getLast();
-			double difference = Math.abs(angle - direction(village.center(), otherStation)) % 360.0;
-			if (Math.min(difference, 360.0 - difference) < settings.minAngle()) {
-				return false;
-			}
-		}
-		return true;
-	}
-
+	/**
+	 * Whether a path runs into a village: near any part of a village it does not serve, or into the footprint of the
+	 * two it does, whose stations it reaches from outside.
+	 */
 	private boolean passesThroughVillage(List<Point> path, Village a, Village b) {
 		int[] box = bounds(path);
 		int reach = MAX_VILLAGE_REACH + settings.villageMargin();
 		for (Village village : villagesIn(box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach)) {
-			int margin = village.id() == a.id() || village.id() == b.id() ? 0 : settings.villageMargin();
+			boolean served = village.id() == a.id() || village.id() == b.id();
 			for (int i = 1; i < path.size(); i++) {
-				if (village.touches(path.get(i - 1), path.get(i), margin)) {
+				Point from = path.get(i - 1);
+				Point to = path.get(i);
+				boolean hit = village.touches(from, to, served ? SERVED_MARGIN : settings.villageMargin());
+				if (hit) {
 					return true;
 				}
 			}
@@ -518,28 +706,50 @@ public class NetworkPlanner {
 		return false;
 	}
 
+	/**
+	 * Whether a path comes too close to a planned line or station. Lines keep {@code clearance} apart, except two lines
+	 * of the same village: they may run {@value #DOUBLE_TRACK} apart, side by side or where one turns away from the
+	 * other, and near that village they may come as close as that anywhere. Rails never come closer, but for a line's
+	 * first and last straights, which meet its villages' stations.
+	 */
 	private boolean comesTooClose(List<Point> path, Village a, Village b) {
 		int[] box = bounds(path);
 		int clearance = settings.clearance();
+		long clearanceSq = (long) clearance * clearance;
+		long doubleTrackSq = (long) DOUBLE_TRACK * DOUBLE_TRACK;
 		int nearShared = settings.stationMargin() + settings.maxRun();
-		for (int index : linksIn(box[0] - clearance, box[1] - clearance, box[2] + clearance, box[3] + clearance)) {
-			Link link = links.get(index);
+		List<Link> nearby = new ArrayList<>(tracksIn(box[0] - clearance, box[1] - clearance, box[2] + clearance,
+				box[3] + clearance, linkGrid, links));
+		List<Link> nearbyStations = tracksIn(box[0] - clearance, box[1] - clearance, box[2] + clearance,
+				box[3] + clearance, stationGrid, stations);
+		nearby.addAll(nearbyStations);
+		for (Link link : nearby) {
+			// A station belongs to its village alone: its from is the village, its to no village at all.
 			Village shared = link.connects(a.id()) ? a : link.connects(b.id()) ? b : null;
+			boolean ownStation = shared != null && nearbyStations.contains(link);
 			for (int i = 1; i < path.size(); i++) {
 				Point p1 = path.get(i - 1);
 				Point p2 = path.get(i);
+				if (ownStation && (i == 1 || i == path.size() - 1)) {
+					continue;
+				}
 				for (int j = 1; j < link.path().size(); j++) {
 					Point q1 = link.path().get(j - 1);
 					Point q2 = link.path().get(j);
 					long gapSq = gapSq(p1, p2, q1, q2);
-					if (gapSq == 0) {
+					if (gapSq < doubleTrackSq) {
 						return true;
 					}
-					// Two lines of the same village start near each other; only their crossing counts there.
-					if (shared != null && shared.touches(p1, p2, nearShared) && shared.touches(q1, q2, nearShared)) {
+					if (gapSq >= clearanceSq || shared == null) {
+						if (gapSq < clearanceSq) {
+							return true;
+						}
 						continue;
 					}
-					if (gapSq < (long) clearance * clearance) {
+					// Exactly a double track apart: side by side, or where one track turns away from the other.
+					boolean doubleTrack = gapSq == doubleTrackSq;
+					boolean leavingTogether = shared.touches(p1, p2, nearShared) && shared.touches(q1, q2, nearShared);
+					if (!doubleTrack && !leavingTogether) {
 						return true;
 					}
 				}
@@ -568,15 +778,34 @@ public class NetworkPlanner {
 		links.add(link);
 		linksByVillage.computeIfAbsent(link.from(), key -> new ArrayList<>()).add(index);
 		linksByVillage.computeIfAbsent(link.to(), key -> new ArrayList<>()).add(index);
+		addToGrid(linkGrid, link.path(), index);
+		// The ways out of its two villages change with the new line.
+		exits.keySet().removeIf(key -> key.village() == link.from() || key.village() == link.to());
+	}
+
+	private void addStation(Link station) {
+		stationByVillage.put(station.from(), stations.size());
+		addToGrid(stationGrid, station.path(), stations.size());
+		stations.add(station);
+	}
+
+	private static void addToGrid(Map<Long, List<Integer>> grid, List<Point> path, int index) {
 		Set<Long> cells = new HashSet<>();
-		List<Point> path = link.path();
 		for (int i = 1; i < path.size(); i++) {
 			Point p = path.get(i - 1);
 			Point q = path.get(i);
 			forEachCell(Math.min(p.x(), q.x()), Math.min(p.z(), q.z()), Math.max(p.x(), q.x()), Math.max(p.z(), q.z()),
 					LINK_CELL, cells::add);
 		}
-		cells.forEach(key -> linkGrid.computeIfAbsent(key, k -> new ArrayList<>()).add(index));
+		cells.forEach(key -> grid.computeIfAbsent(key, k -> new ArrayList<>()).add(index));
+	}
+
+	/** The lines or stations with a segment in a cell the given block area touches. */
+	private static List<Link> tracksIn(int minX, int minZ, int maxX, int maxZ, Map<Long, List<Integer>> grid,
+			List<Link> tracks) {
+		Set<Integer> found = new LinkedHashSet<>();
+		forEachCell(minX, minZ, maxX, maxZ, LINK_CELL, key -> found.addAll(grid.getOrDefault(key, List.of())));
+		return found.stream().map(tracks::get).toList();
 	}
 
 	private List<Village> villagesNear(Point center, int radius) {
@@ -587,12 +816,6 @@ public class NetworkPlanner {
 		List<Village> found = new ArrayList<>();
 		forEachCell(minX, minZ, maxX, maxZ, settings.maxLength(),
 				key -> found.addAll(villageGrid.getOrDefault(key, List.of())));
-		return found;
-	}
-
-	private Set<Integer> linksIn(int minX, int minZ, int maxX, int maxZ) {
-		Set<Integer> found = new LinkedHashSet<>();
-		forEachCell(minX, minZ, maxX, maxZ, LINK_CELL, key -> found.addAll(linkGrid.getOrDefault(key, List.of())));
 		return found;
 	}
 
@@ -633,7 +856,4 @@ public class NetworkPlanner {
 		return gapX * gapX + gapZ * gapZ;
 	}
 
-	private static double direction(Point from, Point to) {
-		return Math.toDegrees(Math.atan2(to.z() - from.z(), to.x() - from.x()));
-	}
 }

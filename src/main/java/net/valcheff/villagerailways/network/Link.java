@@ -14,8 +14,17 @@ import java.util.List;
  */
 public record Link(long from, long to, List<Point> path, Status status, boolean trunk) {
 	public enum Status {
+		/** Planned and being built as its chunks generate. */
 		PLANNED,
-		BUILT
+		/** Every chunk of the line has been built. */
+		BUILT,
+		/** Cannot be built: a chunk on its path existed before the line was planned, or no height profile fits. */
+		BLOCKED
+	}
+
+	/** Key of a line: the two village ids in a fixed order. */
+	public NetworkPlanner.VillagePair key() {
+		return NetworkPlanner.VillagePair.of(from, to);
 	}
 
 	public boolean connects(long village) {

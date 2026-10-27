@@ -1,0 +1,209 @@
+{
+	"description": "Double track tunnel: a spruce frame every 6 blocks; between frames slab ceiling and, in the middle, a copper lantern on a chain in section A and none in section B.",
+	"forward": "north",
+	"rails_across": [
+		-1,
+		1
+	],
+	"across": [
+		-4,
+		4
+	],
+	"up": [
+		-2,
+		5
+	],
+	"outside": 1,
+	"cobwebs": [
+		[
+			-2,
+			2
+		],
+		[
+			2,
+			2
+		]
+	],
+	"legend": {
+		".": "air, cleared",
+		"#": "wall: stone and open cave stay, dirt, sand, gravel and fluids become cobblestone",
+		" ": "left as it is"
+	},
+	"palette": {
+		"A": "minecraft:spruce_log[axis=z]",
+		"B": "minecraft:spruce_fence[east=true,north=true,south=false,waterlogged=false,west=true]",
+		"C": "minecraft:copper_lantern[hanging=true,waterlogged=false]",
+		"D": "minecraft:rail[shape=north_south,waterlogged=false]",
+		"E": "minecraft:spruce_log[axis=y]",
+		"F": "minecraft:spruce_log[axis=x]",
+		"G": "minecraft:spruce_stairs[facing=west,half=top,shape=straight,waterlogged=false]",
+		"H": "minecraft:spruce_stairs[facing=east,half=top,shape=straight,waterlogged=false]",
+		"I": "minecraft:spruce_trapdoor[facing=east,half=top,open=true,powered=false,waterlogged=false]",
+		"J": "minecraft:spruce_trapdoor[facing=west,half=top,open=true,powered=false,waterlogged=false]",
+		"K": "minecraft:spruce_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]",
+		"L": "minecraft:spruce_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+		"M": "minecraft:cobblestone",
+		"N": "minecraft:spruce_stairs[facing=west,half=top,shape=inner_left,waterlogged=false]",
+		"O": "minecraft:spruce_stairs[facing=south,half=top,shape=straight,waterlogged=false]",
+		"P": "minecraft:spruce_stairs[facing=east,half=top,shape=inner_right,waterlogged=false]",
+		"Q": "minecraft:spruce_wall_sign[facing=east,waterlogged=false]",
+		"R": "minecraft:spruce_wall_sign[facing=west,waterlogged=false]",
+		"S": "minecraft:spruce_slab[type=top,waterlogged=false]",
+		"T": "minecraft:spruce_planks",
+		"U": "minecraft:copper_chain",
+		"V": "minecraft:spruce_stairs[facing=west,half=top,shape=inner_right,waterlogged=false]",
+		"W": "minecraft:spruce_stairs[facing=north,half=top,shape=straight,waterlogged=false]",
+		"X": "minecraft:spruce_stairs[facing=east,half=top,shape=inner_left,waterlogged=false]",
+		"Y": "minecraft:spruce_fence[east=true,north=false,south=true,waterlogged=false,west=true]"
+	},
+	"pieces": {
+		"entrance": [
+			[
+				"         ",
+				"         ",
+				" ABBBBBA ",
+				"  C...C  ",
+				"  .....  ",
+				"  .D.D.  ",
+				"         ",
+				"         "
+			]
+		],
+		"section_a": [
+			[
+				"#########",
+				"#########",
+				"#EFFFFFE#",
+				"#EG...HE#",
+				"#EI...JE#",
+				"#EKD.DLE#",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##NOOOP##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##GSSSH##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"####T####",
+				"##GSUSH##",
+				"##Q.C.R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##GSSSH##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##VWWWX##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			]
+		],
+		"section_b": [
+			[
+				"#########",
+				"#########",
+				"#EFFFFFE#",
+				"#EG...HE#",
+				"#EI...JE#",
+				"#EKD.DLE#",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##NOOOP##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##GSSSH##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"####T####",
+				"##GS.SH##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##GSSSH##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			],
+			[
+				"#########",
+				"#########",
+				"##VWWWX##",
+				"##Q...R##",
+				"##Q...R##",
+				"##QD.DR##",
+				"###MMM###",
+				"#########"
+			]
+		],
+		"exit": [
+			[
+				"         ",
+				"         ",
+				" AYYYYYA ",
+				"  C...C  ",
+				"  .....  ",
+				"  .D.D.  ",
+				"         ",
+				"         "
+			]
+		]
+	}
+}

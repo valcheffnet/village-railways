@@ -25,7 +25,10 @@ import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.WorldgenRandom;
 import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece;
 import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructurePiece;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
@@ -179,7 +182,23 @@ public class StructurePredictor {
 	private PredictedStructure toPrediction(StructureStart start, ChunkPos chunk) {
 		String name = structures.wrapAsHolder(start.getStructure()).getRegisteredName();
 		BlockPos center = start.getPieces().getFirst().getBoundingBox().getCenter();
-		return new PredictedStructure(name, chunk, center, start.getBoundingBox());
+		List<BoundingBox> buildings = start.getPieces().stream()
+				.filter(piece -> !isStreet(piece))
+				.map(StructurePiece::getBoundingBox)
+				.toList();
+		return new PredictedStructure(name, chunk, center, start.getBoundingBox(), buildings);
+	}
+
+	/**
+	 * Whether a piece is open ground a line may cross: a village street or street end, or the empty piece villagers
+	 * stand on. Vanilla and most village mods keep these in pools named that way.
+	 */
+	private static boolean isStreet(StructurePiece piece) {
+		if (!(piece instanceof PoolElementStructurePiece pooled)) {
+			return false;
+		}
+		String element = pooled.getElement().toString();
+		return element.contains("/streets/") || element.contains("/terminators/") || element.contains("/villagers/");
 	}
 
 	private static long horizontalDistanceSq(BlockPos a, BlockPos b) {

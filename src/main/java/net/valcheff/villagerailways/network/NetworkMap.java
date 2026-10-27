@@ -47,14 +47,27 @@ public final class NetworkMap {
 		List<Obstacle> obstaclesIn(int minX, int minZ, int maxX, int maxZ);
 	}
 
-	public static Path write(NetworkPlanner planner, OceanTest ocean, ObstacleSource obstacles, Path file)
-			throws IOException {
-		List<Village> villages = planner.villages();
-		List<Link> links = planner.links();
-		int minX = villages.stream().mapToInt(Village::minX).min().orElse(0);
-		int minZ = villages.stream().mapToInt(Village::minZ).min().orElse(0);
-		int maxX = villages.stream().mapToInt(Village::maxX).max().orElse(1);
-		int maxZ = villages.stream().mapToInt(Village::maxZ).max().orElse(1);
+	/** Draws the square of {@code radius} blocks around {@code center}: the villages in it and every line touching it. */
+	public static Path write(NetworkPlanner planner, Point center, int radius, OceanTest ocean, ObstacleSource obstacles,
+			Path file) throws IOException {
+		int minX = center.x() - radius;
+		int minZ = center.z() - radius;
+		int maxX = center.x() + radius;
+		int maxZ = center.z() + radius;
+		Box area = new Box(minX, minZ, maxX, maxZ);
+		List<Village> villages = planner.villages().stream()
+				.filter(village -> area.touches(village.center(), village.center(), 0))
+				.toList();
+		List<Link> links = planner.links().stream()
+				.filter(link -> {
+					for (int i = 1; i < link.path().size(); i++) {
+						if (area.touches(link.path().get(i - 1), link.path().get(i), 0)) {
+							return true;
+						}
+					}
+					return false;
+				})
+				.toList();
 		double scale = (double) (MAX_SIZE - 2 * BORDER) / Math.max(maxX - minX, maxZ - minZ);
 		int width = (int) ((maxX - minX) * scale) + 2 * BORDER;
 		int height = (int) ((maxZ - minZ) * scale) + 2 * BORDER;

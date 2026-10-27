@@ -1,5 +1,7 @@
 package net.valcheff.villagerailways.structure;
 
+import java.util.List;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
@@ -11,6 +13,8 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
  * @param chunk     chunk that holds the structure start
  * @param center    center of the start piece (for a village, its meeting point)
  * @param bounds    box around every piece of the structure
+ * @param buildings boxes of the pieces that are not streets
  */
-public record PredictedStructure(String structure, ChunkPos chunk, BlockPos center, BoundingBox bounds) {
+public record PredictedStructure(String structure, ChunkPos chunk, BlockPos center, BoundingBox bounds,
+		List<BoundingBox> buildings) {
 }

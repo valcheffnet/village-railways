@@ -35,8 +35,9 @@ public final class NetworkStore {
 		}
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
 			Saved saved = GSON.fromJson(reader, Saved.class);
-			return new NetworkPlanner(settings, saved.villages(), saved.links(), orEmpty(saved.exploredCells()),
-					saved.partlyExplored() == null ? Map.of() : saved.partlyExplored(), orEmpty(saved.deferred()));
+			return new NetworkPlanner(settings, saved.villages(), saved.links(), orEmpty(saved.stations()),
+					orEmpty(saved.exploredCells()), saved.partlyExplored() == null ? Map.of() : saved.partlyExplored(),
+					orEmpty(saved.deferred()));
 		}
 	}
 
@@ -44,7 +45,7 @@ public final class NetworkStore {
 		Files.createDirectories(file.getParent());
 		Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
 		try (Writer writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
-			GSON.toJson(new Saved(1, planner.villages(), planner.links(), planner.exploredCells(),
+			GSON.toJson(new Saved(1, planner.villages(), planner.links(), planner.stations(), planner.exploredCells(),
 					planner.partlyExploredCells(), planner.deferredPairs()), writer);
 		}
 		Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -54,7 +55,7 @@ public final class NetworkStore {
 		return list == null ? List.of() : list;
 	}
 
-	private record Saved(int version, List<Village> villages, List<Link> links, List<Long> exploredCells,
-			Map<Long, long[]> partlyExplored, List<NetworkPlanner.VillagePair> deferred) {
+	private record Saved(int version, List<Village> villages, List<Link> links, List<Link> stations,
+			List<Long> exploredCells, Map<Long, long[]> partlyExplored, List<NetworkPlanner.VillagePair> deferred) {
 	}
 }

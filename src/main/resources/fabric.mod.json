@@ -13,6 +13,9 @@
 			"net.valcheff.villagerailways.VillageRailways"
 		]
 	},
+	"mixins": [
+		"village_railways.mixins.json"
+	],
 	"depends": {
 		"fabricloader": ">=0.20.0",
 		"fabric-api": "*",
