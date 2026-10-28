@@ -99,6 +99,6 @@ class HaltPlannerTest {
 			sections[i] = section;
 		}
 		return new TrackPlan(x, z, track, ground, water, new boolean[length], sections, new int[0], new int[0], List.of(),
-				new int[0]);
+				new int[0], false);
 	}
 }

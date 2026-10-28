@@ -26,7 +26,6 @@ import net.minecraft.world.level.ChunkPos;
 import net.valcheff.villagerailways.network.Link;
 import net.valcheff.villagerailways.network.NetworkPlanner.VillagePair;
 import net.valcheff.villagerailways.network.Point;
-import net.valcheff.villagerailways.profile.TrackPlanner;
 
 /**
  * Which chunks a line may be built into, and which lines run through which chunks.
@@ -40,15 +39,21 @@ import net.valcheff.villagerailways.profile.TrackPlanner;
  * registering a line and a generator thread decorating one of its chunks: each chunk of a line is either still to
  * generate, and gets the line then, or queued to get it later.
  *
- * <p>Chunk sets are kept as one bit per chunk in 32 x 32 region bitsets and saved with the queue in
- * {@code decorated.bin}.
+ * <p>Every chunk a line has been built into is remembered, so a line that is planned again, when its station turns
+ * western or it moves to another end, never goes into the same chunk twice: building over what stands there already
+ * would take it down and put it up again.
+ *
+ * <p>Chunk sets are kept as one bit per chunk in 32 x 32 region bitsets and saved with the queue and the built lines
+ * in {@code decorated.bin}.
  */
 public class BuildState {
 	/** How far, in blocks, building reaches from a line's centre: trench slopes, tunnel walls, bridge decks. */
 	public static final int REACH = 8;
 	private static final Pattern REGION_FILE = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
 	/** Marks the current file layout; the first layout started with a region count, never negative. */
-	private static final int LAYOUT = -2;
+	private static final int LAYOUT = -3;
+	/** The layout before the built lines were saved. */
+	private static final int LAYOUT_QUEUE = -2;
 
 	private final Path file;
 	/** Chunks the mod saw generate. */
@@ -61,6 +66,8 @@ public class BuildState {
 	private final Map<VillagePair, Set<Long>> chunksByLine = new HashMap<>();
 	/** Generated chunks still to get a line planned after they generated. */
 	private final Map<Long, Set<VillagePair>> laterByChunk = new LinkedHashMap<>();
+	/** The chunks each unfinished line has been built into. */
+	private final Map<VillagePair, Set<Long>> builtByLine = new HashMap<>();
 
 	private BuildState(Path file) {
 		this.file = file;
@@ -75,7 +82,7 @@ public class BuildState {
 		if (Files.exists(state.file)) {
 			try (DataInputStream in = new DataInputStream(Files.newInputStream(state.file))) {
 				int first = in.readInt();
-				if (first == LAYOUT) {
+				if (first == LAYOUT || first == LAYOUT_QUEUE) {
 					readBits(in, in.readInt(), state.decorated);
 					readBits(in, in.readInt(), state.preexisting);
 					readBits(in, in.readInt(), state.lived);
@@ -86,6 +93,17 @@ public class BuildState {
 						for (int j = 0; j < lines; j++) {
 							state.laterByChunk.computeIfAbsent(chunk, key -> new LinkedHashSet<>())
 									.add(new VillagePair(in.readLong(), in.readLong()));
+						}
+					}
+					if (first == LAYOUT) {
+						int lines = in.readInt();
+						for (int i = 0; i < lines; i++) {
+							VillagePair line = new VillagePair(in.readLong(), in.readLong());
+							int chunks = in.readInt();
+							Set<Long> built = state.builtByLine.computeIfAbsent(line, key -> new HashSet<>());
+							for (int j = 0; j < chunks; j++) {
+								built.add(in.readLong());
+							}
 						}
 					}
 				} else {
@@ -115,25 +133,33 @@ public class BuildState {
 					out.writeLong(line.second());
 				}
 			}
+			out.writeInt(builtByLine.size());
+			for (Map.Entry<VillagePair, Set<Long>> entry : builtByLine.entrySet()) {
+				out.writeLong(entry.getKey().first());
+				out.writeLong(entry.getKey().second());
+				out.writeInt(entry.getValue().size());
+				for (long chunk : entry.getValue()) {
+					out.writeLong(chunk);
+				}
+			}
 		}
 		Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 	}
 
 	/**
 	 * Registers a new line for building. Refused when one of its chunks existed before the mod or has been lived in;
-	 * its chunks that have generated already are queued to get the line later. {@code restored} registers a line
-	 * saved before a restart as it was: its queue was saved with it.
+	 * its chunks that have generated already are queued to get the line later, unless it was built into them before.
+	 * {@code restored} registers a line saved before a restart as it was: its queue was saved with it.
 	 */
-	public synchronized boolean register(Link link, boolean restored) {
-		// A trunk line's second rail runs beside it.
-		Set<Long> chunks = chunksOf(link.path(), link.trunk() ? REACH + TrackPlanner.DOUBLE_TRACK : REACH);
+	public synchronized boolean register(Link link, boolean restored, int reach) {
+		Set<Long> chunks = chunksOf(link.path(), reach);
 		if (!restored && chunks.stream().anyMatch(this::isClosed)) {
 			return false;
 		}
 		chunksByLine.put(link.key(), chunks);
 		for (long chunk : chunks) {
 			linesByChunk.computeIfAbsent(chunk, key -> new ArrayList<>()).add(link.key());
-			if (!restored && isSet(decorated, chunk)) {
+			if (!restored && isSet(decorated, chunk) && !isBuilt(chunk, link.key())) {
 				laterByChunk.computeIfAbsent(chunk, key -> new LinkedHashSet<>()).add(link.key());
 			}
 		}
@@ -143,6 +169,12 @@ public class BuildState {
 	/** Whether any chunk a line along this path would touch is closed to new lines. */
 	public synchronized boolean touchesClosed(List<Point> path) {
 		return chunksOf(path, REACH).stream().anyMatch(this::isClosed);
+	}
+
+	/** Whether no chunk of a registered line has been built yet; true for a line not registered at all. */
+	public synchronized boolean isUnbuilt(VillagePair line) {
+		Set<Long> chunks = chunksByLine.get(line);
+		return chunks == null || chunks.stream().noneMatch(chunk -> isSet(decorated, chunk));
 	}
 
 	/** Whether a line still has chunks queued to get it after they generated. */
@@ -159,6 +191,17 @@ public class BuildState {
 		long key = ChunkPos.pack(chunk.x(), chunk.z());
 		setBit(decorated, key);
 		return List.copyOf(linesByChunk.getOrDefault(key, List.of()));
+	}
+
+	/** Records that a line has been built into a chunk. */
+	public synchronized void markBuilt(long chunk, VillagePair line) {
+		builtByLine.computeIfAbsent(line, key -> new HashSet<>()).add(chunk);
+	}
+
+	/** Whether a line has been built into a chunk. */
+	public synchronized boolean isBuilt(long chunk, VillagePair line) {
+		Set<Long> chunks = builtByLine.get(line);
+		return chunks != null && chunks.contains(chunk);
 	}
 
 	/** Whether the lines a chunk was to get were built into it as it generated. */
@@ -201,7 +244,13 @@ public class BuildState {
 		return chunks != null && chunks.stream().allMatch(chunk -> isSet(decorated, chunk)) && !hasQueued(line);
 	}
 
-	/** Forgets a finished or abandoned line. */
+	/** Forgets a finished or abandoned line, with the chunks it was built into. */
+	public synchronized void finish(VillagePair line) {
+		forget(line);
+		builtByLine.remove(line);
+	}
+
+	/** Forgets a line that is about to be registered again, keeping the chunks it was built into. */
 	public synchronized void forget(VillagePair line) {
 		Set<Long> chunks = chunksByLine.remove(line);
 		if (chunks != null) {

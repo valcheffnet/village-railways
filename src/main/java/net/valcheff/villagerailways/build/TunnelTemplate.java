@@ -10,31 +10,26 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.BaseRailBlock;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.Property;
 
 /**
  * A tunnel cut from a model built in the game, one slice per block along the track: an entrance, two sections that
  * take turns along the tunnel, and the entrance mirrored as the exit. The first slices of the entrance (its
- * {@code outside} ones) stand in front of the portal, in the open. The model runs north; a slice is turned to the way
- * the line runs when it is built.
+ * {@code outside} ones) stand in front of the portal, in the open. Each piece is a structure file with the track along
+ * +x, listed with its other details in {@code tunnel_templates/<name>.json}; a slice is turned to the way the line runs
+ * when it is built.
  *
- * <p>Each cell of a slice is left as it is, cleared, a wall, or a block. A wall keeps stone and open cave and is lined
- * with cobblestone where it is dirt, sand, gravel or fluid, as everywhere in a tunnel. The model's rails are only
- * cleared: the line lays its own, with its powered rails.
+ * <p>Each cell of a slice is left as it is (structure void), cleared (air), a wall (barrier), or a block. A wall keeps
+ * stone and open cave and is lined with cobblestone where it is dirt, sand, gravel or fluid, as everywhere in a tunnel.
+ * The model's rails are only cleared: the line lays its own, with its powered rails.
  */
 final class TunnelTemplate {
 	static final TunnelTemplate SINGLE = load("single");
@@ -122,53 +117,39 @@ final class TunnelTemplate {
 	}
 
 	private static TunnelTemplate parse(JsonObject json) {
-		JsonArray across = json.getAsJsonArray("across");
-		JsonArray up = json.getAsJsonArray("up");
-		int minAcross = across.get(0).getAsInt();
-		int maxAcross = across.get(1).getAsInt();
-		int minUp = up.get(0).getAsInt();
-		int maxUp = up.get(1).getAsInt();
-		Map<Character, BlockState> palette = new HashMap<>();
-		for (Map.Entry<String, JsonElement> entry : json.getAsJsonObject("palette").entrySet()) {
-			palette.put(entry.getKey().charAt(0), parseState(entry.getValue().getAsString()));
-		}
 		JsonObject pieces = json.getAsJsonObject("pieces");
+		Map<String, StructureFile> files = new HashMap<>();
+		for (String piece : List.of("entrance", "section_a", "section_b", "exit")) {
+			files.put(piece, StructureFile.load(pieces.get(piece).getAsString().replace("village_railways:", "")));
+		}
+		StructureFile first = files.get("entrance");
+		int middle = json.get("middle").getAsInt();
+		int railLevel = json.get("rail_level").getAsInt();
 		List<int[]> cobwebs = new ArrayList<>();
 		for (JsonElement cell : json.getAsJsonArray("cobwebs")) {
 			cobwebs.add(new int[] {cell.getAsJsonArray().get(0).getAsInt(), cell.getAsJsonArray().get(1).getAsInt()});
 		}
-		return new TunnelTemplate(minAcross, maxAcross, minUp, maxUp, json.get("outside").getAsInt(),
-				piece(pieces, "entrance", palette, minAcross, maxAcross, minUp, maxUp),
-				piece(pieces, "section_a", palette, minAcross, maxAcross, minUp, maxUp),
-				piece(pieces, "section_b", palette, minAcross, maxAcross, minUp, maxUp),
-				piece(pieces, "exit", palette, minAcross, maxAcross, minUp, maxUp), cobwebs);
+		return new TunnelTemplate(-middle, first.sizeZ - 1 - middle, -railLevel, first.sizeY - 1 - railLevel,
+				json.get("outside").getAsInt(), slices(files.get("entrance")), slices(files.get("section_a")),
+				slices(files.get("section_b")), slices(files.get("exit")), cobwebs);
 	}
 
-	private static List<Slice> piece(JsonObject pieces, String name, Map<Character, BlockState> palette, int minAcross,
-			int maxAcross, int minUp, int maxUp) {
-		int width = maxAcross - minAcross + 1;
-		int height = maxUp - minUp + 1;
+	/** The slices of a piece: one per block along x, its cells by height (y) and across (z). */
+	private static List<Slice> slices(StructureFile file) {
 		List<Slice> slices = new ArrayList<>();
-		for (JsonElement element : pieces.getAsJsonArray(name)) {
-			JsonArray rows = element.getAsJsonArray();
-			byte[][] kinds = new byte[height][width];
-			BlockState[][][] states = new BlockState[4][height][width];
-			for (int row = 0; row < height; row++) {
-				// Rows run from the top down.
-				String line = rows.get(row).getAsString();
-				int u = height - 1 - row;
-				for (int a = 0; a < width; a++) {
-					char cell = line.charAt(a);
-					BlockState state = palette.get(cell);
-					kinds[u][a] = switch (cell) {
-						case ' ' -> LEAVE;
-						case '.' -> CLEAR;
-						case '#' -> WALL;
-						default -> state.getBlock() instanceof BaseRailBlock ? CLEAR : BLOCK;
-					};
-					if (kinds[u][a] == BLOCK) {
+		for (int x = 0; x < file.sizeX; x++) {
+			byte[][] kinds = new byte[file.sizeY][file.sizeZ];
+			BlockState[][][] states = new BlockState[4][file.sizeY][file.sizeZ];
+			for (int y = 0; y < file.sizeY; y++) {
+				for (int z = 0; z < file.sizeZ; z++) {
+					BlockState state = file.get(x, y, z);
+					kinds[y][z] = state == null ? LEAVE
+							: state.isAir() || state.getBlock() instanceof BaseRailBlock ? CLEAR
+							: state.is(Blocks.BARRIER) ? WALL
+							: BLOCK;
+					if (kinds[y][z] == BLOCK) {
 						for (Direction forward : Direction.Plane.HORIZONTAL) {
-							states[forward.get2DDataValue()][u][a] = state.rotate(rotationTo(forward));
+							states[forward.get2DDataValue()][y][z] = state.rotate(StructureFile.rotationTo(forward));
 						}
 					}
 				}
@@ -176,41 +157,5 @@ final class TunnelTemplate {
 			slices.add(new Slice(kinds, states));
 		}
 		return List.copyOf(slices);
-	}
-
-	private static Rotation rotationTo(Direction forward) {
-		return switch (forward) {
-			case EAST -> Rotation.CLOCKWISE_90;
-			case SOUTH -> Rotation.CLOCKWISE_180;
-			case WEST -> Rotation.COUNTERCLOCKWISE_90;
-			default -> Rotation.NONE;
-		};
-	}
-
-	/** A block state written as {@code namespace:id[property=value,...]}. */
-	private static BlockState parseState(String text) {
-		int open = text.indexOf('[');
-		Identifier id = Identifier.parse(open < 0 ? text : text.substring(0, open));
-		Block block = BuiltInRegistries.BLOCK.getValue(id);
-		if (block == Blocks.AIR && !id.getPath().equals("air")) {
-			throw new IllegalStateException("Unknown block " + id + " in a tunnel template");
-		}
-		BlockState state = block.defaultBlockState();
-		if (open >= 0) {
-			for (String pair : text.substring(open + 1, text.length() - 1).split(",")) {
-				String[] parts = pair.split("=");
-				Property<?> property = block.getStateDefinition().getProperty(parts[0]);
-				if (property == null) {
-					throw new IllegalStateException("Block " + id + " has no property " + parts[0]);
-				}
-				state = with(state, property, parts[1]);
-			}
-		}
-		return state;
-	}
-
-	private static <T extends Comparable<T>> BlockState with(BlockState state, Property<T> property, String value) {
-		return state.setValue(property, property.getValue(value)
-				.orElseThrow(() -> new IllegalStateException("Bad value " + value + " for " + property.getName())));
 	}
 }

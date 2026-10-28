@@ -40,6 +40,11 @@ final class ExitGrid {
 		}
 	}
 
+	/** Closes an area itself, without a margin round it. */
+	void close(Box area) {
+		fill(area.minX(), area.minZ(), area.maxX(), area.maxZ(), cell -> closed[cell] = true);
+	}
+
 	/** Adds a track; the blocks within two blocks of it are closed. */
 	void addTrack(List<Point> path) {
 		int index = tracks.size();

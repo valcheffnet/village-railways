@@ -160,6 +160,35 @@ class NetworkPlannerTest {
 	}
 
 	@Test
+	void trunkLineEndsAtWesternStations() {
+		// Two pairs of villages 1800 blocks apart along a line, so each trunk end has room for its house.
+		List<Village> villages = List.of(village(1, 0, 0), village(2, 600, 0), village(4, 2400, 0), village(5, 3000, 0));
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		exploreAll(planner, villages, ACCEPT_ALL);
+		Link trunk = planner.links().stream().filter(Link::trunk).findFirst().orElseThrow();
+		Village first = villages.stream().filter(village -> village.id() == trunk.from()).findFirst().orElseThrow();
+		Village second = villages.stream().filter(village -> village.id() == trunk.to()).findFirst().orElseThrow();
+		assertTrue(planner.stationOf(first.id()).trunk() && planner.stationOf(second.id()).trunk(),
+				"western stations at both ends");
+		StationLayout.Station start = StationLayout.of(planner.stationOf(first.id()).path(), first);
+		StationLayout.Station end = StationLayout.of(planner.stationOf(second.id()).path(), second);
+		List<Point> path = trunk.path();
+		assertEquals(start.end(StationLayout.Slot.FIRST_END), path.getFirst());
+		assertEquals(end.end(StationLayout.Slot.SECOND_END), path.getLast());
+		// The trunk's second rail, on its left, comes out on the village side of each station.
+		assertTrue(leftFaces(path.get(0), path.get(1), first.center()), "second rail away from " + first.id());
+		assertTrue(leftFaces(path.get(path.size() - 2), path.getLast(), second.center()), "second rail away from " + second.id());
+		assertNetworkRules(planner);
+	}
+
+	private static boolean leftFaces(Point from, Point to, Point target) {
+		int dx = Integer.signum(to.x() - from.x());
+		int dz = Integer.signum(to.z() - from.z());
+		// The left of a way along (dx, dz), with x east and z south.
+		return dz * (target.x() - from.x()) - dx * (target.z() - from.z()) > 0;
+	}
+
+	@Test
 	void groupGetsAtMostThreeTrunkLines() {
 		// A small group in the middle with five far groups around it.
 		List<Village> villages = new ArrayList<>();
@@ -263,6 +292,10 @@ class NetworkPlannerTest {
 					"line " + link.path() + " does not start at a slot of " + planner.stationOf(link.from()));
 			assertTrue(atSlot(planner.stationOf(link.to()), link.path().getLast(), byId.get(link.to())),
 					"line " + link.path() + " does not end at a slot of " + planner.stationOf(link.to()));
+			List<Point> path = link.path();
+			assertTrue(length(path.get(0), path.get(1)) >= ExitFinder.APPROACH
+					&& length(path.get(path.size() - 2), path.getLast()) >= ExitFinder.APPROACH,
+					"line " + path + " turns within " + ExitFinder.APPROACH + " blocks of a station");
 			for (Link station : planner.stations()) {
 				for (int i = 2; i < link.path().size() - 1; i++) {
 					for (int j = 1; j < station.path().size(); j++) {
@@ -284,6 +317,10 @@ class NetworkPlannerTest {
 				assertFalse(touch(links.get(i), links.get(j)), "lines " + links.get(i) + " and " + links.get(j) + " meet");
 			}
 		}
+	}
+
+	private static int length(Point a, Point b) {
+		return Math.abs(b.x() - a.x()) + Math.abs(b.z() - a.z());
 	}
 
 	private static boolean atSlot(Link station, Point end, Village village) {

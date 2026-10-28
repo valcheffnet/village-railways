@@ -19,23 +19,28 @@ import net.minecraft.core.Direction;
  *                  from the right (the clockwise side of the way back), {@code 2 * block} when from the left
  * @param seconds   the second rails of a double track, each running on the left of a stretch of this line
  * @param beside    on a second rail, for each block the block of its line it runs beside; empty on a line
+ * @param western   whether this is the track of a western station, with its house on the left
  */
 public record TrackPlan(int[] x, int[] z, int[] track, int[] ground, int[] water, boolean[] corner, Section[] sections,
-		int[] halts, int[] junctions, List<TrackPlan> seconds, int[] beside) {
+		int[] halts, int[] junctions, List<TrackPlan> seconds, int[] beside, boolean western) {
 	public int length() {
 		return x.length;
 	}
 
 	public TrackPlan withHalts(int[] halts) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
 	}
 
 	public TrackPlan withJunctions(int[] junctions) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
 	}
 
 	public TrackPlan withSeconds(List<TrackPlan> seconds) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
+	}
+
+	public TrackPlan withWestern(boolean western) {
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
 	}
 
 	/** The direction from block {@code from} to the neighbouring block {@code to}. */

@@ -8,8 +8,9 @@ import java.util.List;
  * Finds the way a line leaves its village's station for open land, round the village when the line's other village
  * lies behind it.
  *
- * <p>The way runs along the axes with the fewest turns, and the shortest way among those. Every straight between two
- * turns is at least {@value #MIN_RUN} blocks long.
+ * <p>The way runs along the axes with the fewest turns, and the shortest way among those. It leaves the station
+ * straight for at least {@value #APPROACH} blocks, and every straight between two turns is at least {@value #MIN_RUN}
+ * blocks long.
  *
  * <p>The search goes by turns: from where it stands it runs straight on as far as it can, and every block passed on
  * the way, a long enough straight behind it, is a place to turn from in the next round. Each round covers the area
@@ -17,6 +18,8 @@ import java.util.List;
  */
 final class ExitFinder {
 	static final int MIN_RUN = 3;
+	/** Straight blocks a line runs out of its station before its first turn, so both rails of a double track get in. */
+	static final int APPROACH = 12;
 	/** Most turns a way out may take. */
 	private static final int MAX_TURNS = 8;
 	private static final int[][] DIRECTIONS = StationLayout.DIRECTIONS;
@@ -151,7 +154,7 @@ final class ExitFinder {
 						}
 						table.reach(state, turns, length, straight.cell(), straight.previous());
 					}
-					if (run >= MIN_RUN) {
+					if (run >= (straight.previous() < 0 ? APPROACH : MIN_RUN)) {
 						int here = cell(x, z, box, width);
 						for (int side : new int[] {(dir + 1) % 4, (dir + 3) % 4}) {
 							if (table.setsOut(here * 4 + side)) {

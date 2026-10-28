@@ -2,7 +2,6 @@ package net.valcheff.villagerailways.build;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,6 +12,8 @@ import java.util.function.IntPredicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.RandomSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.item.ItemStack;
@@ -22,17 +23,27 @@ import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CrossCollisionBlock;
+import net.minecraft.world.level.block.FaceAttachedHorizontalDirectionalBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.RedstoneWallTorchBlock;
 import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.WallSignBlock;
+import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.WeatheringCopper;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.block.state.properties.RailShape;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnoreProcessor;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import net.valcheff.villagerailways.profile.Section;
 import net.valcheff.villagerailways.profile.TrackPlan;
 
@@ -88,10 +99,6 @@ public final class LineBuilder {
 	private static final int SHORT_RAILING_PATTERN = 3;
 	private static final int LONG_RAILING_PATTERN = 5;
 	private static final int SHORT_RAILING_BRIDGE = 6;
-	/** Widest stretch of ground between two bridges that a double bridge runs on across. */
-	static final int MAX_BRIDGE_GAP = 16;
-	/** Shortest bridge in the open over which a single line runs as a double track. */
-	private static final int MIN_DOUBLE_BRIDGE = 5;
 	/** How far down open track is propped up where the ground under it is hollow. */
 	private static final int MAX_FILL_UNDER = 6;
 	/** How high above the track trees in the way are looked for. */
@@ -110,12 +117,32 @@ public final class LineBuilder {
 	private static final int SCAN_UP = 24;
 	private static final int SCAN_DOWN = 48;
 
+	/**
+	 * How every block is written: sent to players, with no shape or neighbour updates, no drops, no spilled containers
+	 * and no reaction of the block to being placed. The builder sets each block's final state itself, so a chunk comes
+	 * out the same whether it is generating or loaded and in whatever order its neighbours are built; nothing it
+	 * replaces or takes away drops as an item, and a powered rail keeps the power it is placed with.
+	 */
+	private static final int WRITE = Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS;
 	private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 	private static final BlockState STONE = Blocks.COBBLESTONE.defaultBlockState();
 	private static final BlockState DECK = Blocks.OAK_PLANKS.defaultBlockState();
 	private static final BlockState FENCE = Blocks.OAK_FENCE.defaultBlockState();
 	private static final BlockState RAILING = Blocks.SPRUCE_FENCE.defaultBlockState();
 	private static final BlockState COBWEB = Blocks.COBWEB.defaultBlockState();
+	/** The halt's building, a structure file drawn with the track along +x and the building towards +z. */
+	private static final String HALT = "halt";
+	/**
+	 * The house of a western station, a structure saved with a structure block: the tracks run along x, the station
+	 * track at z {@value #WESTERN_TRACK_Z} and its second track two blocks lower, the rails one block up, the middle of
+	 * the station at x {@value #WESTERN_MIDDLE_X}, the house towards larger z.
+	 */
+	private static final Identifier WESTERN_STATION = Identifier.fromNamespaceAndPath("village_railways", "western_station");
+	private static final int WESTERN_MIDDLE_X = 18;
+	private static final int WESTERN_TRACK_Z = 4;
+	private static final int WESTERN_RAIL_Y = 1;
+	/** Where along the western house its two dispensers stand, by the door. */
+	private static final int WESTERN_DISPENSER_X = 22;
 
 	/**
 	 * The slice of a tunnel template a block is built from: a slice of the template turned to run {@code forward},
@@ -133,10 +160,23 @@ public final class LineBuilder {
 	private record Templated(TemplateSlice slice, boolean own, int low, int high) {
 	}
 
+	/**
+	 * Where a second rail leaves or joins a line: the side it lies on and the way the line runs on single from there.
+	 * The line's rail at that block is a switch.
+	 */
+	private record Turnout(Direction branch, Direction single) {
+	}
+
 	/** Whether blocks of a chunk may be read and changed, given by chunk coordinates. */
 	@FunctionalInterface
 	public interface Reachable {
 		boolean test(int chunkX, int chunkZ);
+	}
+
+	/** Whether a line being built has been built into a chunk already, given by chunk coordinates. */
+	@FunctionalInterface
+	public interface Built {
+		boolean test(int chunkX, int chunkZ, TrackPlan line);
 	}
 
 	private final WorldGenLevel level;
@@ -150,8 +190,8 @@ public final class LineBuilder {
 	/** The logs of the template tunnels round this chunk, which clearing trees leaves standing; worked out once. */
 	private Set<Long> templateLogs;
 	private final Reachable reachable;
-	/** Neighbouring chunks the lines were built into already, where what later features took is put back. */
-	private final Reachable built;
+	/** Neighbouring chunks each line was built into already, where what later features took is put back. */
+	private final Built built;
 	private boolean repairing;
 	/** The line being worked on in the current loop, and its place in {@link #plans}. */
 	private TrackPlan plan;
@@ -162,15 +202,15 @@ public final class LineBuilder {
 	private final Map<TrackPlan, Section[]> sections = new HashMap<>();
 	/** Whether each block of each line lies on a plank deck: 0 not known yet, 1 no, 2 yes. */
 	private final Map<TrackPlan, byte[]> decks = new HashMap<>();
-	/** For each block of each line, the first and last block of the double bridge it lies on, or -1. */
-	private final Map<TrackPlan, int[][]> doubleBridges = new HashMap<>();
 	private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 	/** Blocks cleared for the lines in this chunk; sealing and beds never fill them back in. */
 	private final Set<Long> carved = new HashSet<>();
+	/** Every block placed in this chunk, checked at the end for what holds it up. */
+	private final Set<Long> placed = new HashSet<>();
 	private boolean lining;
 
 	private LineBuilder(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> lines, Reachable reachable,
-			Reachable built) {
+			Built built) {
 		this.level = level;
 		this.chunk = chunk;
 		List<TrackPlan> all = new ArrayList<>();
@@ -202,10 +242,11 @@ public final class LineBuilder {
 	 * Builds every line of a chunk, with its second rails. The lines go through each pass together, so where two run
 	 * side by side as a double track, neither one's walls close off the other's corridor. Trees are cleared in the chunks {@code reachable}
 	 * accepts around it: the neighbours a generating chunk may write to, or the loaded ones when a line is added to
-	 * a chunk later. In the chunks of those {@code built} accepts, rails that later features took are laid again.
+	 * a chunk later. In the chunks {@code built} says have a line already, its rails that later features took are laid
+	 * again.
 	 */
 	public static void build(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> plans, Reachable reachable,
-			Reachable built) {
+			Built built) {
 		new LineBuilder(level, chunk, plans, reachable, built).build();
 	}
 
@@ -249,8 +290,18 @@ public final class LineBuilder {
 						buildHalt(i, pass, branchSide(i).getOpposite());
 					}
 				}
+				if (plan.western() && pass == 1) {
+					placeWesternHouse();
+				}
 			}
 		}
+		for (planIndex = 0; planIndex < plans.size(); planIndex++) {
+			plan = plans.get(planIndex);
+			if (plan.western()) {
+				placeWesternDispensers();
+			}
+		}
+		secureAttachments();
 		// A feature of a chunk that generates later may spill into the edge of a built neighbour, a dungeon among them,
 		// and take rails there: they are laid again.
 		repairing = true;
@@ -319,7 +370,7 @@ public final class LineBuilder {
 			switch (section) {
 				case TUNNEL -> buildTunnel(i, x, z, track, distance);
 				case BRIDGE -> buildBridge(i, x, z, track, offset);
-				default -> buildOpen(x, z, track, distance, section);
+				default -> buildOpen(i, x, z, track, distance, section);
 			}
 			if (framed) {
 				clearOverFrame(x, z, track, distance);
@@ -348,7 +399,7 @@ public final class LineBuilder {
 				if (!inChunk(x, z)) {
 					if (lining && kind == TunnelTemplate.WALL && canWrite(x, z)
 							&& needsLining(level.getBlockState(pos.set(x, y, z)))) {
-						level.setBlock(pos, STONE, Block.UPDATE_CLIENTS);
+						level.setBlock(pos, STONE, WRITE);
 					}
 					continue;
 				}
@@ -374,7 +425,10 @@ public final class LineBuilder {
 		out.set(line.x()[i] + right.getStepX() * offset, line.track()[i] + up, line.z()[i] + right.getStepZ() * offset);
 	}
 
-	/** Whether a block is a log of a template tunnel, built here or in a neighbouring chunk, and not a tree's. */
+	/**
+	 * Whether a block is a log of a template tunnel or a western station's house, built here or in a neighbouring chunk,
+	 * and not a tree's.
+	 */
 	private boolean isTemplateLog(BlockPos block) {
 		if (templateLogs == null) {
 			templateLogs = new HashSet<>();
@@ -384,7 +438,23 @@ public final class LineBuilder {
 			int minZ = chunk.getMinBlockZ() - 16;
 			int maxZ = chunk.getMaxBlockZ() + 16;
 			BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos();
+			StructureFile western = StructureFile.load(WESTERN_STATION.getPath());
 			for (TrackPlan line : plans) {
+				if (line.western()) {
+					int middle = line.length() / 2;
+					Rotation rotation = westernRotation(line.direction(middle, middle + 1).getCounterClockWise());
+					BlockPos origin = westernOrigin(line, middle);
+					for (int x = 0; x < western.sizeX; x++) {
+						for (int y = 0; y < western.sizeY; y++) {
+							for (int z = 0; z < western.sizeZ; z++) {
+								BlockState state = western.get(x, y, z);
+								if (state != null && state.is(BlockTags.LOGS)) {
+									templateLogs.add(westernBlock(origin, rotation, x, y, z).asLong());
+								}
+							}
+						}
+					}
+				}
 				TemplateSlice[] slices = templateSlices(line);
 				for (int i = 0; i < line.length(); i++) {
 					TemplateSlice slice = slices[i];
@@ -623,10 +693,10 @@ public final class LineBuilder {
 	}
 
 	/** Flat track, fill or trench: clear the cut, lay the cobblestone bed, prop it up where the ground is hollow. */
-	private void buildOpen(int x, int z, int track, int distance, Section section) {
+	private void buildOpen(int i, int x, int z, int track, int distance, Section section) {
 		int ground = surface(x, z, track);
-		// A cut never goes deeper than a trench may, even where the real ground stands higher than the noise.
-		int top = Math.min(ground, track + Section.MAX_TRENCH + 1);
+		// A cut never goes deeper than planned, even where the real ground stands higher than the noise.
+		int top = Math.min(ground, cutTop(i));
 		if (distance <= 1) {
 			for (int y = track; y <= Math.max(track + 2, top - 1); y++) {
 				clear(x, y, z);
@@ -707,14 +777,13 @@ public final class LineBuilder {
 	}
 
 	/**
-	 * A bridge: in the open a cobblestone deck on cobblestone pillars, wide enough for a double track; under ground,
-	 * across a cave, a plank deck on plank pillars like the tunnel's. {@code offset} counts across the track towards
-	 * the torch side.
+	 * A bridge: in the open a cobblestone deck on cobblestone pillars; under ground, across a cave, a plank deck on
+	 * plank pillars like the tunnel's. {@code offset} counts across the track towards the torch side. The two rails of
+	 * a double track each lay their deck, which meet between them.
 	 */
 	private void buildBridge(int i, int x, int z, int track, int offset) {
 		int distance = Math.abs(offset);
-		boolean wide = isDoubleBridge(i) && offset >= -1 && offset <= DOUBLE_TRACK + 1;
-		if (distance > 1 && !wide) {
+		if (distance > 1) {
 			return;
 		}
 		for (int y = track; y <= track + 2; y++) {
@@ -771,6 +840,13 @@ public final class LineBuilder {
 			// east, so its lever, off, leaves it so and turns it the other way when on.
 			shape = curve(alongX(i) ? Direction.EAST : Direction.SOUTH, branch);
 		}
+		Turnout turnout = turnout(i);
+		if (turnout != null) {
+			// Set from the single line into the second rail: a cart from the single line takes the second rail, one from
+			// either rail of the double track runs on into the single line, so none is turned back.
+			shape = curve(turnout.single(), turnout.branch());
+			placeSwitchLever(i, turnout);
+		}
 		boolean torch = hasTorch(i);
 		// A junction is a plain rail, which its lever switches.
 		boolean besideTorch = branch == null && !isCurve(shape) && (isLongGroup(i - 1) || isLongGroup(i + 1));
@@ -778,6 +854,10 @@ public final class LineBuilder {
 			set(x, track, z, Blocks.POWERED_RAIL.defaultBlockState()
 					.setValue(BlockStateProperties.RAIL_SHAPE_STRAIGHT, shape)
 					.setValue(BlockStateProperties.POWERED, true));
+			if (besideTorch && !isDeck(i) && !isOpenBridge(i)) {
+				// Each powered rail of a group on the ground has its own torch, so none waits on its neighbour's power.
+				placeHiddenTorch(x, track, z);
+			}
 		} else {
 			set(x, track, z, Blocks.RAIL.defaultBlockState().setValue(BlockStateProperties.RAIL_SHAPE, shape));
 		}
@@ -825,10 +905,113 @@ public final class LineBuilder {
 				hangLantern(x - side.getStepX(), track, z - side.getStepZ());
 			}
 		} else if (section != Section.BRIDGE && section != Section.TUNNEL && templated(i) == null
-				&& isLampSpot(i, LAMP_SPACING / 2)) {
+				&& !isWesternStation() && isLampSpot(i, LAMP_SPACING / 2)) {
 			placePost(x + lit.getStepX(), track, z + lit.getStepZ(),
 					Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState());
 		}
+	}
+
+	/**
+	 * The western house at the middle of the current station track, the part of it in this chunk: turned so the
+	 * house stands on the left of the track, away from the village, with ground filled in under it. The structure's
+	 * own rails are left out; the station lays its rails, with their powered rails, itself.
+	 */
+	private void placeWesternHouse() {
+		StructureTemplate house = level.getLevel().getStructureTemplateManager().get(WESTERN_STATION).orElse(null);
+		if (house == null) {
+			return;
+		}
+		int middle = plan.length() / 2;
+		Direction out = plan.direction(middle, middle + 1).getCounterClockWise();
+		StructurePlaceSettings settings = westernSettings(out)
+				.setBoundingBox(new BoundingBox(chunk.getMinBlockX(), level.getMinY(), chunk.getMinBlockZ(), chunk.getMaxBlockX(),
+						level.getMaxY(), chunk.getMaxBlockZ()));
+		BlockPos origin = westernOrigin(plan, middle);
+		BoundingBox box = house.getBoundingBox(settings, origin);
+		if (box.maxX() < chunk.getMinBlockX() || box.minX() > chunk.getMaxBlockX() || box.maxZ() < chunk.getMinBlockZ()
+				|| box.minZ() > chunk.getMaxBlockZ()) {
+			return;
+		}
+		house.placeInWorld(level, origin, origin, settings, RandomSource.create(origin.asLong()), WRITE);
+		for (int x = Math.max(box.minX(), chunk.getMinBlockX()); x <= Math.min(box.maxX(), chunk.getMaxBlockX()); x++) {
+			for (int z = Math.max(box.minZ(), chunk.getMinBlockZ()); z <= Math.min(box.maxZ(), chunk.getMaxBlockZ()); z++) {
+				if (level.getBlockState(pos.set(x, box.minY(), z)).isSolid()) {
+					fillUnder(x, box.minY() - 1, z);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Two dispensers with minecarts by the door of a western house, one facing each track, a button on each and a
+	 * powered rail over a hidden torch in front.
+	 */
+	private void placeWesternDispensers() {
+		int middle = plan.length() / 2;
+		Direction out = plan.direction(middle, middle + 1).getCounterClockWise();
+		Rotation rotation = westernRotation(out);
+		Direction towardsTracks = rotation.rotate(Direction.NORTH);
+		Direction along = plan.direction(middle, middle + 1);
+		BlockPos origin = westernOrigin(plan, middle);
+		for (int trackZ : new int[] {WESTERN_TRACK_Z, WESTERN_TRACK_Z - DOUBLE_TRACK}) {
+			BlockPos dispenser = westernBlock(origin, rotation, WESTERN_DISPENSER_X, WESTERN_RAIL_Y, trackZ + 1);
+			BlockPos rail = westernBlock(origin, rotation, WESTERN_DISPENSER_X, WESTERN_RAIL_Y, trackZ);
+			if (!inChunk(dispenser.getX(), dispenser.getZ())) {
+				continue;
+			}
+			set(dispenser.getX(), dispenser.getY(), dispenser.getZ(), Blocks.DISPENSER.defaultBlockState()
+					.setValue(BlockStateProperties.FACING, towardsTracks));
+			if (level.getBlockEntity(dispenser) instanceof DispenserBlockEntity carts) {
+				carts.setItem(0, new ItemStack(Items.MINECART));
+				carts.setItem(1, new ItemStack(Items.MINECART));
+			}
+			set(dispenser.getX(), dispenser.getY() + 1, dispenser.getZ(), Blocks.STONE_BUTTON.defaultBlockState()
+					.setValue(BlockStateProperties.ATTACH_FACE, AttachFace.FLOOR)
+					.setValue(BlockStateProperties.HORIZONTAL_FACING, along));
+			if (inChunk(rail.getX(), rail.getZ())
+					&& level.getBlockState(rail).getBlock() instanceof BaseRailBlock) {
+				set(rail.getX(), rail.getY(), rail.getZ(), Blocks.POWERED_RAIL.defaultBlockState()
+						.setValue(BlockStateProperties.RAIL_SHAPE_STRAIGHT,
+								along.getAxis() == Direction.Axis.X ? RailShape.EAST_WEST : RailShape.NORTH_SOUTH)
+						.setValue(BlockStateProperties.POWERED, true));
+				placeHiddenTorch(rail.getX(), rail.getY(), rail.getZ());
+			}
+		}
+	}
+
+	/** Where the western structure's corner goes for a station whose middle is block {@code middle} of its track. */
+	private static BlockPos westernOrigin(TrackPlan line, int middle) {
+		return new BlockPos(line.x()[middle] - WESTERN_MIDDLE_X, line.track()[middle] - WESTERN_RAIL_Y,
+				line.z()[middle] - WESTERN_TRACK_Z);
+	}
+
+	private static StructurePlaceSettings westernSettings(Direction out) {
+		return new StructurePlaceSettings()
+				.setRotation(westernRotation(out))
+				.setRotationPivot(new BlockPos(WESTERN_MIDDLE_X, WESTERN_RAIL_Y, WESTERN_TRACK_Z))
+				// The cushions on the benches; each goes in with the chunk it stands in.
+				.setIgnoreEntities(false)
+				// Placed a chunk at a time: the blocks at a chunk's edge keep their shape instead of being updated against
+				// a neighbour that is not built yet, which would drop a lantern or a button hanging there.
+				.setKnownShape(true)
+				.addProcessor(new BlockIgnoreProcessor(List.of(Blocks.RAIL, Blocks.POWERED_RAIL, Blocks.STRUCTURE_VOID)));
+	}
+
+	/** The turn that brings the structure's house side, its +z, round to {@code out}. */
+	private static Rotation westernRotation(Direction out) {
+		return switch (out) {
+			case WEST -> Rotation.CLOCKWISE_90;
+			case NORTH -> Rotation.CLOCKWISE_180;
+			case EAST -> Rotation.COUNTERCLOCKWISE_90;
+			default -> Rotation.NONE;
+		};
+	}
+
+	/** A block of the western structure in the world, given by its place in the structure. */
+	private static BlockPos westernBlock(BlockPos origin, Rotation rotation, int x, int y, int z) {
+		BlockPos pivot = new BlockPos(WESTERN_MIDDLE_X, WESTERN_RAIL_Y, WESTERN_TRACK_Z);
+		return StructureTemplate.transform(new BlockPos(x, y, z), Mirror.NONE, rotation, pivot)
+				.offset(origin);
 	}
 
 	/**
@@ -868,6 +1051,12 @@ public final class LineBuilder {
 		return false;
 	}
 
+	/** Whether the current track is a western station's, or its second track, which have the house's own lamps. */
+	private boolean isWesternStation() {
+		TrackPlan line = lineOf.get(plan);
+		return plan.western() || line != null && line.western();
+	}
+
 	/** The side a line meets block i from, when this station track has its switch there, or null. */
 	private Direction branchSide(int i) {
 		for (int junction : plan.junctions()) {
@@ -894,6 +1083,43 @@ public final class LineBuilder {
 	}
 
 	/**
+	 * The switch where a second rail leaves or joins the current line at block i, or null: where the second rail steps
+	 * out beside the line or back in. Not at a western station, where the second rail runs on into the station's second
+	 * track.
+	 */
+	private Turnout turnout(int i) {
+		if (lineOf.containsKey(plan)) {
+			return null;
+		}
+		Direction back = i > 0 ? plan.direction(i, i - 1) : plan.direction(i, i + 1).getOpposite();
+		for (TrackPlan second : plan.seconds()) {
+			for (int end : new int[] {0, second.length() - 1}) {
+				int dx = second.x()[end] - plan.x()[i];
+				int dz = second.z()[end] - plan.z()[i];
+				if (second.beside()[end] == i && Math.abs(dx) + Math.abs(dz) == 1) {
+					return new Turnout(Direction.getNearest(dx, 0, dz, back), end == 0 ? back : back.getOpposite());
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The lever of a switch, beside the rail on the side away from the second rail. A switch flips between its two
+	 * curves, the south or east one without power and the north or west one with it, so the lever is on where the curve
+	 * into the second rail is the north or west one.
+	 */
+	private void placeSwitchLever(int i, Turnout turnout) {
+		Direction away = turnout.branch().getOpposite();
+		boolean on = turnout.single() == Direction.NORTH || turnout.single() == Direction.WEST;
+		placeIfFree(plan.x()[i] + away.getStepX(), plan.track()[i], plan.z()[i] + away.getStepZ(),
+				Blocks.LEVER.defaultBlockState()
+						.setValue(BlockStateProperties.ATTACH_FACE, AttachFace.FLOOR)
+						.setValue(BlockStateProperties.HORIZONTAL_FACING, turnout.single())
+						.setValue(BlockStateProperties.POWERED, on));
+	}
+
+	/**
 	 * Torches go beside flat, straight rail: on every {@value #POWER_SPACING}th block along the axis, and at the foot
 	 * of every ramp, which powers its sloping rails. Counting by position in the world rather than along the line puts
 	 * the torches of the two rails of a double track side by side.
@@ -901,8 +1127,8 @@ public final class LineBuilder {
 	private boolean hasTorch(int i) {
 		RailShape shape = railShape(plan, i);
 		// Never at the end of a line, where it meets its station track, nor on a switch.
-		if (i == 0 || i == plan.length() - 1 || isCurve(shape) || shape.isSlope() || isDoubleBridgeEnd(i)
-				|| branchSide(i) != null) {
+		if (i == 0 || i == plan.length() - 1 || isCurve(shape) || shape.isSlope() || branchSide(i) != null
+				|| turnout(i) != null) {
 			return false;
 		}
 		return Math.floorMod(along(i), POWER_SPACING) == 0 || isRampFoot(i);
@@ -1084,13 +1310,19 @@ public final class LineBuilder {
 			int z = plan.z()[i];
 			int track = plan.track()[i];
 			boolean open = planned == Section.FLAT || planned == Section.FILL || planned == Section.TRENCH;
-			boolean covered = open && reachable.test(x >> 4, z >> 4)
-					&& surface(x, z, track) > track + Section.MAX_TRENCH + 1;
-			// The ground between two bridges that one double bridge spans is built as bridge too.
-			boolean spanned = planned != Section.BRIDGE && isDoubleBridge(i);
-			known[i] = covered ? Section.TUNNEL : spanned ? Section.BRIDGE : planned;
+			boolean covered = open && reachable.test(x >> 4, z >> 4) && surface(x, z, track) > cutTop(i);
+			known[i] = covered ? Section.TUNNEL : planned;
 		}
 		return known[i];
+	}
+
+	/**
+	 * The first y an open cut at block i leaves standing: as deep as a trench may be, or as the planned ground where the
+	 * planner cut open a tunnel not worth boring.
+	 */
+	private int cutTop(int i) {
+		int track = plan.track()[i];
+		return track + Math.max(Section.MAX_TRENCH, plan.ground()[i] - track) + 1;
 	}
 
 	/**
@@ -1161,18 +1393,14 @@ public final class LineBuilder {
 
 	/**
 	 * The sides of a bridge in the open, or of a short one through a cave: a spruce railing along the outer edges with
-	 * lanterns on the posts, scattered over a double track. A single line runs over a bridge in the open as a
-	 * double track: a second rail branches off at the first block of the bridge, runs beside it on the torch side,
-	 * and joins again at the last.
+	 * lanterns on the posts, scattered over a double track, whose two rails each put up the railing on their outer side.
 	 */
 	private void placeBridgeSides(int i, Direction side, Direction pair) {
 		int x = plan.x()[i];
 		int z = plan.z()[i];
 		int track = plan.track()[i];
-		boolean wide = pair == null && isDoubleBridge(i);
-		boolean scattered = isOpenBridge(i) && (pair != null || wide);
-		int[] offsets = pair != null ? new int[] {pair == side ? -1 : 1}
-				: wide ? new int[] {-1, DOUBLE_TRACK + 1} : new int[] {-1, 1};
+		boolean scattered = isOpenBridge(i) && pair != null;
+		int[] offsets = pair != null ? new int[] {pair == side ? -1 : 1} : new int[] {-1, 1};
 		Direction forward = alongX(i) ? Direction.EAST : Direction.SOUTH;
 		boolean back = hasRailing(blockAt(i, -1));
 		boolean ahead = hasRailing(blockAt(i, 1));
@@ -1187,29 +1415,21 @@ public final class LineBuilder {
 				placeIfFree(railingX, track + 1, railingZ, railingLantern(railingX, railingZ, isOpenBridge(i)));
 			}
 		}
-		if (wide) {
-			placeSecondRail(i, side);
-		}
 	}
 
 	/**
 	 * Whether the railing at block i carries a lantern: the middle of each repeat of its pattern, counted from the end
-	 * of the bridge with the smaller coordinate, so both rails of a double track agree.
+	 * of the bridge with the smaller coordinate.
 	 */
 	private boolean isRailingLantern(int i) {
 		int first = i;
 		int last = i;
-		if (isDoubleBridge(i)) {
-			first = doubleBridges()[0][i];
-			last = doubleBridges()[1][i];
-		} else {
-			boolean cave = isShortDeck(i);
-			while (first > 0 && (cave ? isDeck(first - 1) : isOpenBridge(first - 1))) {
-				first--;
-			}
-			while (last < plan.length() - 1 && (cave ? isDeck(last + 1) : isOpenBridge(last + 1))) {
-				last++;
-			}
+		boolean cave = isShortDeck(i);
+		while (first > 0 && (cave ? isDeck(first - 1) : isOpenBridge(first - 1))) {
+			first--;
+		}
+		while (last < plan.length() - 1 && (cave ? isDeck(last + 1) : isOpenBridge(last + 1))) {
+			last++;
 		}
 		int pattern = last - first + 1 <= SHORT_RAILING_BRIDGE ? SHORT_RAILING_PATTERN : LONG_RAILING_PATTERN;
 		int start = Math.min(along(first), along(last));
@@ -1245,140 +1465,10 @@ public final class LineBuilder {
 		return !isCurve(shape) && !shape.isSlope() && !hasFrame(i) && (isShortDeck(i) || isOpenBridge(i));
 	}
 
-	/** The second rail of a double bridge, two blocks to the torch side, powered where the line's rail is. */
-	private void placeSecondRail(int i, Direction side) {
-		int[][] runs = doubleBridges();
-		int track = plan.track()[i];
-		int x = plan.x()[i] + side.getStepX() * DOUBLE_TRACK;
-		int z = plan.z()[i] + side.getStepZ() * DOUBLE_TRACK;
-		if (i == runs[0][i] || i == runs[1][i]) {
-			Direction inward = i == runs[0][i] ? plan.direction(i, i + 1) : plan.direction(i, i - 1);
-			set(x - side.getStepX(), track, z - side.getStepZ(), Blocks.RAIL.defaultBlockState()
-					.setValue(BlockStateProperties.RAIL_SHAPE, side.getAxis() == Direction.Axis.X ? RailShape.EAST_WEST
-							: RailShape.NORTH_SOUTH));
-			set(x, track, z, Blocks.RAIL.defaultBlockState()
-					.setValue(BlockStateProperties.RAIL_SHAPE, curve(side.getOpposite(), inward)));
-			return;
-		}
-		RailShape shape = alongX(i) ? RailShape.EAST_WEST : RailShape.NORTH_SOUTH;
-		if (hasTorch(i) || isLongGroup(i - 1) || isLongGroup(i + 1)) {
-			set(x, track, z, Blocks.POWERED_RAIL.defaultBlockState()
-					.setValue(BlockStateProperties.RAIL_SHAPE_STRAIGHT, shape)
-					.setValue(BlockStateProperties.POWERED, true));
-		} else {
-			set(x, track, z, Blocks.RAIL.defaultBlockState().setValue(BlockStateProperties.RAIL_SHAPE, shape));
-		}
-	}
-
-	private boolean isDoubleBridge(int i) {
-		return doubleBridges()[0][i] >= 0;
-	}
-
-	private boolean isDoubleBridgeEnd(int i) {
-		int[][] runs = doubleBridges();
-		return runs[0][i] == i || runs[1][i] == i;
-	}
-
-	/**
-	 * The bridges in the open where the current line runs as a double track: their straight, level stretches of at
-	 * least {@value #MIN_DOUBLE_BRIDGE} blocks with no other line beside them, so a ramp or a corner on a bridge leaves
-	 * the rest of it double. Two bridges with up to {@value #MAX_BRIDGE_GAP} blocks of level ground between them make
-	 * one, so the double track does not join and split again. Worked out from the plan, so every chunk agrees.
-	 */
-	private int[][] doubleBridges() {
-		return doubleBridges.computeIfAbsent(plan, line -> {
-			List<int[]> runs = new ArrayList<>();
-			int start = -1;
-			for (int i = 0; i <= line.length(); i++) {
-				boolean bridge = i < line.length() && line.sections()[i] == Section.BRIDGE;
-				if (bridge && start < 0) {
-					start = i;
-				} else if (!bridge && start >= 0) {
-					int[] previous = runs.isEmpty() ? null : runs.getLast();
-					boolean joined = previous != null && start - previous[1] - 1 <= MAX_BRIDGE_GAP
-							&& isGround(line, previous[1] + 1, start - 1);
-					if (joined) {
-						previous[1] = i - 1;
-					} else {
-						runs.add(new int[] {start, i - 1});
-					}
-					start = -1;
-				}
-			}
-			int[] first = new int[line.length()];
-			int[] last = new int[line.length()];
-			Arrays.fill(first, -1);
-			Arrays.fill(last, -1);
-			for (int[] run : runs) {
-				for (int from = run[0]; from <= run[1]; from++) {
-					int to = from;
-					while (to < run[1] && line.track()[to + 1] == line.track()[from] && !line.corner()[to + 1]) {
-						to++;
-					}
-					// Where a ramp or a corner ends the stretch, the rails split and join two blocks clear of it.
-					int splitFrom = isLevelStraight(line, from - 2, from) ? from : from + 2;
-					int splitTo = isLevelStraight(line, to, to + 2) ? to : to - 2;
-					if (splitTo - splitFrom + 1 >= MIN_DOUBLE_BRIDGE && isSingleStraight(line, splitFrom, splitTo)) {
-						Arrays.fill(first, splitFrom, splitTo + 1, splitFrom);
-						Arrays.fill(last, splitFrom, splitTo + 1, splitTo);
-					}
-					from = to;
-				}
-			}
-			return new int[][] {first, last};
-		});
-	}
-
-	/** Whether blocks {@code first} to {@code last} of a line exist, lie at one height and run straight. */
-	private static boolean isLevelStraight(TrackPlan line, int first, int last) {
-		if (first < 0 || last > line.length() - 1) {
-			return false;
-		}
-		for (int i = first; i <= last; i++) {
-			if (line.track()[i] != line.track()[first] || line.corner()[i]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static boolean isGround(TrackPlan line, int first, int last) {
-		for (int i = first; i <= last; i++) {
-			if (line.sections()[i] != Section.FLAT && line.sections()[i] != Section.FILL) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private boolean isSingleStraight(TrackPlan line, int first, int last) {
-		int track = line.track()[first];
-		// Level two blocks past either end too: the block where the rails split never stands at the foot of a ramp,
-		// which needs its torch there, nor at the end of a line or a station track.
-		if (first - 2 < 0 || last + 2 > line.length() - 1) {
-			return false;
-		}
-		for (int i = first - 2; i <= last + 2; i++) {
-			if (line.track()[i] != track || (i >= first && i <= last && line.corner()[i])) {
-				return false;
-			}
-		}
-		for (int i = first; i <= last; i++) {
-			for (int side : new int[] {DOUBLE_TRACK, -DOUBLE_TRACK}) {
-				boolean alongX = line.x()[i == last ? i - 1 : i + 1] != line.x()[i];
-				int[] other = rails.get(ChunkPos.pack(line.x()[i] + (alongX ? 0 : side), line.z()[i] + (alongX ? side : 0)));
-				if (other != null && plans.get(other[0]) != line) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-
 	/**
 	 * One block of the fence frames over a cave bridge. Every {@value #FRAME_SPACING} blocks a frame stands: a post
 	 * each side and a beam across over the track. Rails of fence run along the top, short arms reach out from the
-	 * posts under them, and lanterns hang half way between the frames.
+	 * posts under them, and lanterns hang half way between some of the frames.
 	 */
 	private void placeFrame(int i, Direction side) {
 		int x = plan.x()[i];
@@ -1399,8 +1489,10 @@ public final class LineBuilder {
 				}
 				placeIfFree(fx, track + 2, fz, fence(FENCE, back ? forward.getOpposite() : null, ahead ? forward : null));
 			} else if (at == 0) {
-				placeIfFree(fx, track + 2, fz, Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState()
-						.setValue(BlockStateProperties.HANGING, true));
+				if (isFrameLantern(i)) {
+					placeIfFree(fx, track + 2, fz, Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState()
+							.setValue(BlockStateProperties.HANGING, true));
+				}
 			} else {
 				placeIfFree(fx, track + 2, fz, fence(FENCE, at < FRAME_SPACING / 2 ? forward : forward.getOpposite()));
 			}
@@ -1410,6 +1502,17 @@ public final class LineBuilder {
 		if (post) {
 			set(x, track + 3, z, fence(FENCE, side, side.getOpposite()));
 		}
+	}
+
+	/**
+	 * Whether lanterns hang between two frames at block i. The spans between frames come in groups of five along the
+	 * axis, lit one, dark one, lit one, dark two, or lit one, dark two, lit one, dark one, picked from the position: a
+	 * lit span is always followed by one or two dark ones, and the two rails of a double track agree.
+	 */
+	private boolean isFrameLantern(int i) {
+		int span = Math.floorDiv(along(i), FRAME_SPACING);
+		int k = Math.floorMod(span, 5);
+		return k == 0 || k == ((mix(Math.floorDiv(span, 5), 0) & 1) == 0 ? 2 : 3);
 	}
 
 	/** A fence joined to its neighbours on the given sides; the chunk is built without block updates. */
@@ -1470,46 +1573,43 @@ public final class LineBuilder {
 	 * A halt beside the track at block i, on side {@code away}: a stone platform along the rail, a small
 	 * brick hut with glass windows behind it under an oak roof that shelters the platform, lanterns under the eaves,
 	 * and a dispenser with two minecarts that a button puts on the rail. Around the hut the ground is levelled with
-	 * grass.
+	 * grass. The building is the structure file {@value #HALT}, turned, or mirrored, to the side it stands on.
 	 */
 	private void buildHalt(int i, int pass, Direction away) {
 		int track = plan.track()[i];
 		// Along the track towards the side it goes on: a station bending into a line at its middle has only one half.
 		Direction along = i < plan.length() - 1 && !plan.corner()[i] ? plan.direction(i, i + 1) : plan.direction(i, i - 1);
-		for (int u = -HaltPlanner.HALF_LENGTH; u <= HaltPlanner.HALF_LENGTH; u++) {
-			for (int v = 1; v <= HaltPlanner.DEPTH; v++) {
+		if (pass == 0) {
+			for (int u = -HaltPlanner.HALF_LENGTH; u <= HaltPlanner.HALF_LENGTH; u++) {
+				for (int v = 1; v <= HaltPlanner.DEPTH; v++) {
+					int x = plan.x()[i] + along.getStepX() * u + away.getStepX() * v;
+					int z = plan.z()[i] + along.getStepZ() * u + away.getStepZ() * v;
+					clearTrees(x, z, track);
+				}
+			}
+		}
+		StructureFile house = StructureFile.load(HALT);
+		for (int fx = 0; fx < house.sizeX; fx++) {
+			for (int fz = 0; fz < house.sizeZ; fz++) {
+				// The file runs along +x from u = -HALF_LENGTH, away from the track along +z from the platform's edge.
+				int u = fx - HaltPlanner.HALF_LENGTH;
+				int v = fz + 1;
 				int x = plan.x()[i] + along.getStepX() * u + away.getStepX() * v;
 				int z = plan.z()[i] + along.getStepZ() * u + away.getStepZ() * v;
-				boolean platform = v <= 2;
-				boolean hut = Math.abs(u) <= 2 && v >= 3 && v <= 6;
-				boolean wall = hut && (Math.abs(u) == 2 || v == 3 || v == 6);
-				boolean roof = Math.abs(u) <= 3 && v >= 2;
-				if (pass == 0) {
-					clearTrees(x, z, track);
-					for (int y = platform || hut ? track : track + 1; y <= track + 6; y++) {
-						clear(x, y, z);
+				for (int fy = 0; fy < house.sizeY; fy++) {
+					BlockState state = house.get(fx, fy, fz);
+					if (state == null) {
+						continue;
 					}
-				} else if (pass == 1) {
-					if (platform) {
-						set(x, track, z, Blocks.SMOOTH_STONE.defaultBlockState());
-					} else if (hut) {
-						set(x, track, z, Blocks.SPRUCE_PLANKS.defaultBlockState());
-					} else if (!level.getBlockState(pos.set(x, track, z)).isSolid()) {
-						set(x, track, z, Blocks.GRASS_BLOCK.defaultBlockState());
+					if (pass == 0 && state.isAir()) {
+						clear(x, track + fy, z);
+					} else if (pass == 1 && !state.isAir()
+							&& !(state.is(Blocks.GRASS_BLOCK) && level.getBlockState(pos.set(x, track + fy, z)).isSolid())) {
+						set(x, track + fy, z, StructureFile.transform(state, along, away));
 					}
+				}
+				if (pass == 1) {
 					fillUnder(x, track - 1, z);
-					if (wall) {
-						set(x, track + 1, z, Blocks.POLISHED_GRANITE.defaultBlockState());
-						set(x, track + 2, z, Blocks.BRICKS.defaultBlockState());
-						set(x, track + 3, z, Blocks.BRICKS.defaultBlockState());
-					}
-					if (roof) {
-						// Eaves along the front and back, a flat slab roof between them.
-						set(x, track + 4, z, v == 2 ? Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, away)
-								: v == HaltPlanner.DEPTH
-										? Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, away.getOpposite())
-										: Blocks.OAK_SLAB.defaultBlockState());
-					}
 				}
 			}
 		}
@@ -1518,33 +1618,14 @@ public final class LineBuilder {
 		}
 	}
 
+	/** Fills the halt's dispenser with minecarts and makes the rail it puts them on a powered one, over a hidden torch. */
 	private void placeHaltDetails(int i, int track, Direction along, Direction away) {
-		// Positions are given as blocks along the track and away from it, from the halt's middle.
-		BlockState door = Blocks.OAK_DOOR.defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, away);
-		setAt(i, along, away, 0, 3, track + 1, door.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.LOWER));
-		setAt(i, along, away, 0, 3, track + 2, door.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.UPPER));
-		BlockState window = Blocks.GLASS.defaultBlockState();
-		setAt(i, along, away, -1, 3, track + 2, window);
-		setAt(i, along, away, 0, 6, track + 2, window);
-		BlockState lantern = Blocks.LANTERN.defaultBlockState().setValue(BlockStateProperties.HANGING, true);
-		setAt(i, along, away, -2, 2, track + 3, lantern);
-		setAt(i, along, away, 2, 2, track + 3, lantern);
-		BlockState bench = Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, away);
-		for (int u = -1; u <= 1; u++) {
-			setAt(i, along, away, u, 5, track + 1, bench);
-		}
-		setAt(i, along, away, 3, 1, track, Blocks.DISPENSER.defaultBlockState()
-				.setValue(BlockStateProperties.FACING, away.getOpposite()));
 		int x = plan.x()[i] + along.getStepX() * 3 + away.getStepX();
 		int z = plan.z()[i] + along.getStepZ() * 3 + away.getStepZ();
 		if (inChunk(x, z) && level.getBlockEntity(pos.set(x, track, z)) instanceof DispenserBlockEntity dispenser) {
 			dispenser.setItem(0, new ItemStack(Items.MINECART));
 			dispenser.setItem(1, new ItemStack(Items.MINECART));
 		}
-		setAt(i, along, away, 3, 1, track + 1, Blocks.STONE_BUTTON.defaultBlockState()
-				.setValue(BlockStateProperties.ATTACH_FACE, AttachFace.FLOOR)
-				.setValue(BlockStateProperties.HORIZONTAL_FACING, along));
-		// The rail the dispenser puts its carts on is a powered one, over a hidden torch.
 		int railX = plan.x()[i] + along.getStepX() * 3;
 		int railZ = plan.z()[i] + along.getStepZ() * 3;
 		if (inChunk(railX, railZ) && level.getBlockState(pos.set(railX, track, railZ)).getBlock() instanceof BaseRailBlock) {
@@ -1556,10 +1637,6 @@ public final class LineBuilder {
 		}
 	}
 
-	private void setAt(int i, Direction along, Direction away, int u, int v, int y, BlockState state) {
-		set(plan.x()[i] + along.getStepX() * u + away.getStepX() * v, y,
-				plan.z()[i] + along.getStepZ() * u + away.getStepZ() * v, state);
-	}
 
 	/** A step beside a ramp rail: wood on a plank deck, cobblestone in a tunnel, stone in the open. */
 	private void placeStep(int x, int y, int z, Section section, Direction up) {
@@ -1678,7 +1755,7 @@ public final class LineBuilder {
 			} else if (isStalk(state)) {
 				removeStalk(x, y, z);
 			} else if (isLeafy(state)) {
-				level.setBlock(pos, AIR, Block.UPDATE_CLIENTS);
+				level.setBlock(pos, AIR, WRITE);
 			}
 		}
 	}
@@ -1710,7 +1787,7 @@ public final class LineBuilder {
 			foot--;
 		}
 		for (int up = foot; isStalk(level.getBlockState(pos.set(x, up, z))); up++) {
-			level.setBlock(pos, AIR, Block.UPDATE_CLIENTS);
+			level.setBlock(pos, AIR, WRITE);
 		}
 	}
 
@@ -1739,7 +1816,7 @@ public final class LineBuilder {
 				}
 			}
 		}
-		trunk.forEach(block -> level.setBlock(block, AIR, Block.UPDATE_CLIENTS));
+		trunk.forEach(block -> level.setBlock(block, AIR, WRITE));
 		// Whatever grew on the trunk, a shelf mushroom or a vine, cannot stay on air.
 		for (BlockPos block : trunk) {
 			for (Direction direction : Direction.values()) {
@@ -1747,7 +1824,7 @@ public final class LineBuilder {
 				if (canWrite(next.getX(), next.getZ())) {
 					BlockState state = level.getBlockState(next);
 					if (!state.isAir() && !isTree(state) && !state.canSurvive(level, next)) {
-						level.setBlock(next, AIR, Block.UPDATE_CLIENTS);
+						level.setBlock(next, AIR, WRITE);
 					}
 				}
 			}
@@ -1761,7 +1838,7 @@ public final class LineBuilder {
 				}
 				BlockState state = level.getBlockState(leaf);
 				if ((isLeafy(state) && !state.is(BlockTags.LEAVES)) || (state.is(BlockTags.LEAVES) && !heldByTrunk(leaf))) {
-					level.setBlock(leaf, AIR, Block.UPDATE_CLIENTS);
+					level.setBlock(leaf, AIR, WRITE);
 					dropUnsupportedAbove(leaf.getX(), leaf.getY(), leaf.getZ());
 				}
 			}
@@ -1809,7 +1886,7 @@ public final class LineBuilder {
 			if (state.canSurvive(level, at)) {
 				return;
 			}
-			level.setBlock(at, AIR, Block.UPDATE_CLIENTS);
+			level.setBlock(at, AIR, WRITE);
 		}
 	}
 
@@ -1859,7 +1936,7 @@ public final class LineBuilder {
 		for (int y = track - 1; y <= track + height; y++) {
 			if (distance == 2 || y == track - 1 || y == track + height) {
 				if (needsLining(level.getBlockState(pos.set(x, y, z)))) {
-					level.setBlock(pos, STONE, Block.UPDATE_CLIENTS);
+					level.setBlock(pos, STONE, WRITE);
 				}
 			}
 		}
@@ -1874,12 +1951,95 @@ public final class LineBuilder {
 	/** Writes one block, only inside the chunk being built, or while repairing in a built neighbour. */
 	private void set(int x, int y, int z, BlockState state) {
 		if (writable(x, z)) {
-			level.setBlock(pos.set(x, y, z), state, Block.UPDATE_CLIENTS);
+			pos.set(x, y, z);
+			if (state.is(BlockTags.WOODEN_FENCES)) {
+				state = joinFences(x, y, z, state);
+			}
+			level.setBlock(pos.set(x, y, z), state, WRITE);
+			if (!state.isAir()) {
+				placed.add(pos.asLong());
+			}
 		}
 	}
 
+	/**
+	 * A wooden fence joined to the wooden fences beside it, and they to it, as the game joins them, but to nothing
+	 * else: not to rock, rails or the deck. A fence written where one stands, a post two tracks share, keeps the sides
+	 * the first one joined.
+	 */
+	private BlockState joinFences(int x, int y, int z, BlockState fence) {
+		BlockState there = level.getBlockState(pos.set(x, y, z));
+		BlockState joined = fence;
+		BlockPos.MutableBlockPos beside = new BlockPos.MutableBlockPos();
+		for (Direction side : Direction.Plane.HORIZONTAL) {
+			BooleanProperty property = CrossCollisionBlock.PROPERTY_BY_DIRECTION.get(side);
+			if (there.is(BlockTags.WOODEN_FENCES) && there.getValue(property)) {
+				joined = joined.setValue(property, true);
+			}
+			beside.set(x + side.getStepX(), y, z + side.getStepZ());
+			BlockState neighbour = level.getBlockState(beside);
+			if (!neighbour.is(BlockTags.WOODEN_FENCES)) {
+				continue;
+			}
+			joined = joined.setValue(property, true);
+			BooleanProperty back = CrossCollisionBlock.PROPERTY_BY_DIRECTION.get(side.getOpposite());
+			if (!neighbour.getValue(back) && canWrite(beside.getX(), beside.getZ())) {
+				level.setBlock(beside, neighbour.setValue(back, true), WRITE);
+			}
+		}
+		return joined;
+	}
+
+	/**
+	 * Gives every block placed here that hangs on a wall or a ceiling or stands on a floor what it needs: a sign,
+	 * lantern, torch, button, lever, door or rail whose wall, ceiling or floor is open cave, fluid or nothing gets
+	 * cobblestone there, unless that block is part of a line's corridor; one that cannot be held up that way goes.
+	 * Left as it is, it would hang in the air until the first update next to it, flowing water or a player, and then
+	 * drop as an item.
+	 */
+	private void secureAttachments() {
+		BlockPos.MutableBlockPos support = new BlockPos.MutableBlockPos();
+		for (long key : placed) {
+			BlockPos at = BlockPos.of(key);
+			BlockState state = level.getBlockState(at);
+			if (state.isAir() || state.canSurvive(level, at)) {
+				continue;
+			}
+			support.setWithOffset(at, supportSide(state));
+			BlockState there = level.getBlockState(support);
+			boolean open = there.isAir() || !there.getFluidState().isEmpty() || there.canBeReplaced();
+			if (open && canWrite(support.getX(), support.getZ()) && !carved.contains(support.asLong())) {
+				level.setBlock(support, STONE, WRITE);
+				if (state.canSurvive(level, at)) {
+					continue;
+				}
+				level.setBlock(support, there, WRITE);
+			}
+			level.setBlock(at, AIR, WRITE);
+		}
+	}
+
+	/** The side of a block that holds it up: the wall behind it, the ceiling it hangs from or the floor. */
+	private static Direction supportSide(BlockState state) {
+		if (state.getBlock() instanceof LanternBlock) {
+			return state.getValue(BlockStateProperties.HANGING) ? Direction.UP : Direction.DOWN;
+		}
+		if (state.getBlock() instanceof WallSignBlock || state.getBlock() instanceof WallTorchBlock
+				|| state.getBlock() instanceof RedstoneWallTorchBlock) {
+			return state.getValue(BlockStateProperties.HORIZONTAL_FACING).getOpposite();
+		}
+		if (state.getBlock() instanceof FaceAttachedHorizontalDirectionalBlock) {
+			return switch (state.getValue(BlockStateProperties.ATTACH_FACE)) {
+				case CEILING -> Direction.UP;
+				case WALL -> state.getValue(BlockStateProperties.HORIZONTAL_FACING).getOpposite();
+				default -> Direction.DOWN;
+			};
+		}
+		return Direction.DOWN;
+	}
+
 	private boolean writable(int x, int z) {
-		return inChunk(x, z) || repairing && canWrite(x, z) && built.test(x >> 4, z >> 4);
+		return inChunk(x, z) || repairing && canWrite(x, z) && built.test(x >> 4, z >> 4, lineOf.getOrDefault(plan, plan));
 	}
 
 	/** Lays the rail of block i again where it went missing: room above it, ground under it, the rail and its torch. */

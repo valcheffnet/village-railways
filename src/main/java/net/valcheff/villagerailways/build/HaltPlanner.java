@@ -9,6 +9,7 @@ import net.valcheff.villagerailways.profile.HeightProfile;
 import net.valcheff.villagerailways.profile.Section;
 import net.valcheff.villagerailways.profile.TerrainSampler;
 import net.valcheff.villagerailways.profile.TrackPlan;
+import net.valcheff.villagerailways.profile.TrackPlanner;
 
 /**
  * Picks where a line gets a halt: a small hut on a platform beside the track, where riders can take a minecart.
@@ -124,7 +125,7 @@ public final class HaltPlanner {
 		}
 		int track = plan.track()[i];
 		// Clear of bridges by as much ground as a double bridge spans, so a halt never stands where one runs on.
-		int bridgeClearance = HALF_LENGTH + LineBuilder.MAX_BRIDGE_GAP;
+		int bridgeClearance = HALF_LENGTH + TrackPlanner.MAX_BRIDGE_GAP;
 		for (int j = Math.max(0, i - bridgeClearance); j <= Math.min(plan.length() - 1, i + bridgeClearance); j++) {
 			if (plan.sections()[j] == Section.BRIDGE) {
 				return false;

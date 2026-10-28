@@ -12,17 +12,25 @@ import java.util.List;
  * end, carrying on along the track, so two lines at the ends run straight through; or the middle, square on from
  * outside, where a switch takes it onto the track.
  *
+ * <p>A village where a trunk line starts or ends gets a western station instead: a second track on the village side of
+ * the first, which the trunk's second rail runs into, and a large house with its platform on the outer side. The ends
+ * of the second track are slots too; the middle takes no line, which would have to cross the house.
+ *
  * <p>Directions are indices into {@link #DIRECTIONS}: 0 east, 1 south, 2 west, 3 north.
  */
 public final class StationLayout {
 	static final int[][] DIRECTIONS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
-	/** Blocks from the middle of the station track to either end. */
-	static final int HALF_LENGTH = 12;
+	/** Blocks from the middle of the station track to either end, room for the western house's platform. */
+	static final int HALF_LENGTH = 18;
 	static final int LENGTH = 2 * HALF_LENGTH + 1;
+	/** How far the platform and house of a western station reach out from its track. */
+	static final int HOUSE_DEPTH = 14;
+	/** Distance from a western station's track to its second track, as on a double track. */
+	static final int SECOND_TRACK = 2;
 
-	/** The three places a line meets the station. */
+	/** The places a line meets the station; the outer ones are the ends of a western station's second track. */
 	public enum Slot {
-		FIRST_END, SECOND_END, MIDDLE
+		FIRST_END, SECOND_END, MIDDLE, OUTER_FIRST, OUTER_SECOND
 	}
 
 	/**
@@ -38,21 +46,44 @@ public final class StationLayout {
 				case FIRST_END -> step(middle, (along + 2) % 4, HALF_LENGTH);
 				case SECOND_END -> step(middle, along, HALF_LENGTH);
 				case MIDDLE -> middle;
+				case OUTER_FIRST -> step(end(Slot.FIRST_END), (out + 2) % 4, SECOND_TRACK);
+				case OUTER_SECOND -> step(end(Slot.SECOND_END), (out + 2) % 4, SECOND_TRACK);
 			};
 		}
 
 		/** The way a line leaves the station from a slot. */
 		public int leaving(Slot slot) {
 			return switch (slot) {
-				case FIRST_END -> (along + 2) % 4;
-				case SECOND_END -> along;
+				case FIRST_END, OUTER_FIRST -> (along + 2) % 4;
+				case SECOND_END, OUTER_SECOND -> along;
 				case MIDDLE -> out;
 			};
+		}
+
+		/** The end of the track beside an outer slot, whose line a trunk's second rail would carry on; else null. */
+		public static Slot innerOf(Slot slot) {
+			return switch (slot) {
+				case OUTER_FIRST -> Slot.FIRST_END;
+				case OUTER_SECOND -> Slot.SECOND_END;
+				default -> null;
+			};
+		}
+
+		/** A western station's second track, on the village side of the first, end to end. */
+		public List<Point> secondTrack() {
+			return List.of(end(Slot.OUTER_FIRST), step(middle, (out + 2) % 4, SECOND_TRACK), end(Slot.OUTER_SECOND));
 		}
 
 		/** The track, end to end, as a path of corners. */
 		public List<Point> track() {
 			return List.of(end(Slot.FIRST_END), middle, end(Slot.SECOND_END));
+		}
+
+		/** The ground a western house and its platform take, beside the track on its outer side, end to end. */
+		public Box house() {
+			Point a = step(step(middle, (along + 2) % 4, HALF_LENGTH), out, 1);
+			Point b = step(step(middle, along, HALF_LENGTH), out, HOUSE_DEPTH);
+			return new Box(Math.min(a.x(), b.x()), Math.min(a.z(), b.z()), Math.max(a.x(), b.x()), Math.max(a.z(), b.z()));
 		}
 	}
 
