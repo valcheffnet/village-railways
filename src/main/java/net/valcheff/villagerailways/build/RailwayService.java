@@ -294,7 +294,7 @@ public class RailwayService {
 	/**
 	 * The block-by-block plan of a line or a station track, made once. A line runs from the rail height of one of its
 	 * stations to the other's, with its halts; a station track lies level. A trunk line is a double track away from
-	 * its villages.
+	 * its villages, and any line over its bridges.
 	 */
 	public Optional<TrackPlan> planOf(Link link) {
 		Optional<TrackPlan> cached = plans.get(link.key());

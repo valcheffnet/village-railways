@@ -278,19 +278,13 @@ public class TrackPlanner {
 				return false;
 			}
 		}
-		for (int j = i - 2; j <= i + 2; j++) {
-			Section section = line.sections()[j];
-			if (section != Section.FLAT && section != Section.FILL && section != Section.TRENCH) {
-				return false;
-			}
-		}
-		return true;
+		return isGround(line, i - 2, i + 2);
 	}
 
 	/**
 	 * Second rails beside blocks {@code first} to {@code last} of a line: one that follows the line all the way, or
-	 * pieces either side of a corner it cannot go round, too tight or with a ramp at it. At an open end the second rail starts or stops beside that
-	 * block instead of branching off on level ground.
+	 * pieces either side of a corner it cannot go round, too tight or with a ramp at it. At an open end the second
+	 * rail starts or stops beside that block instead of branching off on level ground.
 	 */
 	private void addSecondRails(TrackPlan line, boolean[] split, boolean[] bridged, int first, int last,
 			List<TrackPlan> seconds, boolean openFrom, boolean openTo) {
