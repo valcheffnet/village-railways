@@ -19,6 +19,7 @@ import net.minecraft.world.level.WorldGenLevel;
 import net.valcheff.villagerailways.build.RailwayService;
 import net.valcheff.villagerailways.command.SpeedDisplay;
 import net.valcheff.villagerailways.command.VillageRailwaysCommand;
+import net.valcheff.villagerailways.map.NetworkMaps;
 import net.valcheff.villagerailways.network.RailwayNetwork;
 import net.valcheff.villagerailways.structure.StructurePredictor;
 import org.slf4j.Logger;
@@ -41,6 +42,7 @@ public class VillageRailways implements ModInitializer {
 				try {
 					long started = System.nanoTime();
 					service = RailwayService.start(level, RailwayConfig.load(FabricLoader.getInstance().getConfigDir()));
+					NetworkMaps.load(service.network().folder());
 					LOGGER.info("Railway network ready in {} ms", (System.nanoTime() - started) / 1_000_000);
 				} catch (IOException e) {
 					throw new UncheckedIOException("Could not load the railway network of this world", e);
@@ -67,6 +69,7 @@ public class VillageRailways implements ModInitializer {
 			}
 		});
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+			NetworkMaps.unload();
 			PREDICTORS.clear();
 			service = null;
 		});

@@ -44,6 +44,7 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnoreProcessor;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import net.valcheff.villagerailways.map.NetworkMapItem;
 import net.valcheff.villagerailways.profile.Section;
 import net.valcheff.villagerailways.profile.TrackPlan;
 import net.valcheff.villagerailways.profile.TrackSettings;
@@ -143,6 +144,10 @@ public final class LineBuilder {
 	private static final int WESTERN_RAIL_Y = 1;
 	/** Where along the western house its two dispensers stand, by the door. */
 	private static final int WESTERN_DISPENSER_X = 22;
+	/** The middle frame of the map wall in the western house, on the wall facing the tracks. */
+	private static final int WALL_X = 22;
+	private static final int WALL_Y = 4;
+	private static final int WALL_Z = 16;
 
 	/**
 	 * The slice of a tunnel template a block is built from: a slice of the template turned to run {@code forward},
@@ -1007,6 +1012,32 @@ public final class LineBuilder {
 			case EAST -> Rotation.COUNTERCLOCKWISE_90;
 			default -> Rotation.NONE;
 		};
+	}
+
+	/** The item frames of the map wall in a western house, and the way they face. */
+	public record MapWall(List<BlockPos> frames, Direction facing) {
+	}
+
+	/**
+	 * Where the map wall hangs in the western house of a station track: rows of item frames on the wall facing the
+	 * tracks, in the order {@link NetworkMapItem#wall} gives its maps, north row first and west column first. The
+	 * columns run the way the maps join up seen from in front, whichever way the house is turned.
+	 */
+	public static MapWall mapWall(TrackPlan station) {
+		int middle = station.length() / 2;
+		Rotation rotation = westernRotation(station.direction(middle, middle + 1).getCounterClockWise());
+		BlockPos center = westernBlock(westernOrigin(station, middle), rotation, WALL_X, WALL_Y, WALL_Z);
+		Direction facing = rotation.rotate(Direction.NORTH);
+		int count = NetworkMapItem.STATION_WALL;
+		List<BlockPos> frames = new ArrayList<>();
+		for (int row = 0; row < count; row++) {
+			for (int column = 0; column < count; column++) {
+				// Seen from in front, the left is the frames' clockwise side, where the west column goes.
+				frames.add(center.above((count - 1) / 2 - row)
+						.relative(facing.getCounterClockWise(), column - (count - 1) / 2));
+			}
+		}
+		return new MapWall(frames, facing);
 	}
 
 	/** A block of the western structure in the world, given by its place in the structure. */

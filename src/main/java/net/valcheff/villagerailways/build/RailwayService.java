@@ -17,14 +17,21 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.decoration.GlowItemFrame;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.AABB;
 import net.valcheff.villagerailways.RailwayConfig;
 import net.valcheff.villagerailways.VillageRailways;
+import net.valcheff.villagerailways.map.NetworkMapItem;
+import net.valcheff.villagerailways.map.NetworkMaps;
 import net.valcheff.villagerailways.network.Link;
 import net.valcheff.villagerailways.network.NetworkPlanner;
 import net.valcheff.villagerailways.network.NetworkPlanner.VillagePair;
@@ -77,6 +84,8 @@ public class RailwayService {
 	private final TerrainSampler terrain;
 	private final Map<VillagePair, Link> lines = new ConcurrentHashMap<>();
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
+	/** Whether lines were planned or finished since the maps on the station walls were drawn. */
+	private volatile boolean wallsStale = true;
 	private final Set<Long> queuedSquares = ConcurrentHashMap.newKeySet();
 	private final ExecutorService planner = Executors.newSingleThreadExecutor(runnable -> {
 		Thread thread = new Thread(runnable, "Village Railways planner");
@@ -171,6 +180,7 @@ public class RailwayService {
 		BlockPos center = new BlockPos(squareX * SQUARE + SQUARE / 2, 0, squareZ * SQUARE + SQUARE / 2);
 		try {
 			RailwayNetwork.Result result = network.explore(center, SQUARE / 2 - 1);
+			wallsStale |= !result.added().isEmpty();
 			for (Link link : result.added()) {
 				forgetStationPlans(link);
 				if (lines.containsKey(link.key())) {
@@ -202,6 +212,7 @@ public class RailwayService {
 		if (tickCount % LIVED_CHECK_INTERVAL == 0) {
 			markLivedChunks();
 			planAroundPlayers();
+			updateMapWalls();
 		}
 		Map<Long, List<VillagePair>> queued = buildState.takeQueued(
 				chunk -> level.getChunkSource().getChunkNow(ChunkPos.getX(chunk), ChunkPos.getZ(chunk)) != null, LATER_PER_TICK);
@@ -236,6 +247,58 @@ public class RailwayService {
 					finish(key, Link.Status.BUILT);
 				}
 			}
+		}
+	}
+
+	/**
+	 * Hangs the map wall in every western house built so far that has none, once the chunks of the wall are loaded,
+	 * and draws the walls' maps again when lines have been planned or finished since.
+	 */
+	private void updateMapWalls() {
+		NetworkPlanner planner = network.planner();
+		for (Link station : planner.stations()) {
+			if (!station.trunk() || station.status() == Link.Status.BLOCKED || NetworkMaps.hasWall(station.key())) {
+				continue;
+			}
+			Optional<TrackPlan> plan = planOf(station);
+			if (plan.isPresent()) {
+				LineBuilder.MapWall wall = LineBuilder.mapWall(plan.get());
+				if (wall.frames().stream().allMatch(frame -> isBuiltAndLoaded(station, frame)
+						&& isBuiltAndLoaded(station, frame.relative(wall.facing().getOpposite())))) {
+					hangMapWall(station, plan.get(), wall);
+				}
+			}
+		}
+		if (wallsStale) {
+			wallsStale = false;
+			NetworkMaps.wallMaps().forEach(id -> NetworkMapItem.redraw(level, planner, id));
+		}
+	}
+
+	private boolean isBuiltAndLoaded(Link station, BlockPos block) {
+		int chunkX = block.getX() >> 4;
+		int chunkZ = block.getZ() >> 4;
+		return (station.status() == Link.Status.BUILT || buildState.isBuilt(ChunkPos.pack(chunkX, chunkZ), station.key()))
+				&& level.getChunkSource().getChunkNow(chunkX, chunkZ) != null;
+	}
+
+	/** Glow item frames with the station's maps on its wall; a spot that has a frame already keeps it. */
+	private void hangMapWall(Link station, TrackPlan plan, LineBuilder.MapWall wall) {
+		int middle = plan.length() / 2;
+		BlockPos at = new BlockPos(plan.x()[middle], plan.track()[middle], plan.z()[middle]);
+		try {
+			List<ItemStack> maps = NetworkMapItem.stationWall(level, network.planner(), at);
+			for (int i = 0; i < maps.size(); i++) {
+				BlockPos spot = wall.frames().get(i);
+				if (level.getEntitiesOfClass(ItemFrame.class, new AABB(spot)).isEmpty()) {
+					GlowItemFrame frame = new GlowItemFrame(level, spot, wall.facing());
+					frame.setItem(maps.get(i), false);
+					level.addFreshEntity(frame);
+				}
+			}
+			NetworkMaps.registerWall(station.key(), maps.stream().map(map -> map.get(DataComponents.MAP_ID)).toList());
+		} catch (IOException e) {
+			VillageRailways.LOGGER.error("Could not hang the map wall of the station at {}", at, e);
 		}
 	}
 
@@ -477,6 +540,7 @@ public class RailwayService {
 	}
 
 	private void finish(VillagePair key, Link.Status status) {
+		wallsStale = true;
 		network.planner().setStatus(key, status);
 		buildState.finish(key);
 		lines.remove(key);

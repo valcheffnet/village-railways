@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -28,7 +29,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.Blocks;
@@ -39,6 +42,7 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.valcheff.villagerailways.VillageRailways;
 import net.valcheff.villagerailways.build.RailwayService;
+import net.valcheff.villagerailways.map.NetworkMapItem;
 import net.valcheff.villagerailways.network.Link;
 import net.valcheff.villagerailways.network.NetworkMap;
 import net.valcheff.villagerailways.network.NetworkPlanner;
@@ -63,6 +67,10 @@ import net.valcheff.villagerailways.structure.StructurePredictor;
  *       {@code profile} and {@code build} count them, with how far each one is built.</li>
  *   <li>{@code /villagerailways map [radius]} draws the network around the caller as planned so far, without planning
  *       more, to {@code village_railways/network.png}.</li>
+ *   <li>{@code /villagerailways mapitem [radius]} gives the caller a vanilla map with only the network on it, centred
+ *       on the caller and reaching radius blocks each way, more than a vanilla map can.</li>
+ *   <li>{@code /villagerailways mapwall [maps] [radius]} gives the caller maps by maps of the network for a wall of
+ *       item frames, centred on the caller and reaching radius blocks each way, as far as one map does by default.</li>
  *   <li>{@code /villagerailways profile [n]} lays out the n-th nearest planned line block by block and draws its height
  *       profile to {@code village_railways/profile.png}.</li>
  *   <li>{@code /villagerailways build [n]} generates every chunk along the n-th nearest line, which builds it, and
@@ -120,7 +128,66 @@ public final class VillageRailwaysCommand {
 				.then(literal("map")
 						.executes(context -> map(context, DEFAULT_RADIUS))
 						.then(argument("radius", IntegerArgumentType.integer(16, 20000))
-								.executes(context -> map(context, IntegerArgumentType.getInteger(context, "radius"))))));
+								.executes(context -> map(context, IntegerArgumentType.getInteger(context, "radius")))))
+				.then(literal("mapitem")
+						.executes(context -> giveMap(context, NetworkMapItem.DEFAULT_RADIUS))
+						.then(argument("radius", IntegerArgumentType.integer(64, 16384))
+								.executes(context -> giveMap(context, IntegerArgumentType.getInteger(context, "radius")))))
+				.then(literal("mapwall")
+						.executes(context -> giveMapWall(context, 3, NetworkMapItem.DEFAULT_RADIUS))
+						.then(argument("maps", IntegerArgumentType.integer(1, 5))
+								.executes(context -> giveMapWall(context, IntegerArgumentType.getInteger(context, "maps"),
+										NetworkMapItem.DEFAULT_RADIUS))
+								.then(argument("radius", IntegerArgumentType.integer(64, 16384))
+										.executes(context -> giveMapWall(context,
+												IntegerArgumentType.getInteger(context, "maps"),
+												IntegerArgumentType.getInteger(context, "radius")))))));
+	}
+
+	private static int giveMapWall(CommandContext<CommandSourceStack> context, int count, int radius)
+			throws CommandSyntaxException {
+		CommandSourceStack source = context.getSource();
+		ServerPlayer player = source.getPlayerOrException();
+		List<ItemStack> maps;
+		try {
+			maps = NetworkMapItem.wall(source.getServer().overworld(), VillageRailways.network().planner(),
+					player.getBlockX(), player.getBlockZ(), count, radius);
+		} catch (IOException e) {
+			source.sendFailure(Component.literal("Could not keep the maps' scale: " + e.getMessage()));
+			return 0;
+		}
+		int given = 0;
+		for (ItemStack map : maps) {
+			given += player.addItem(map) ? 1 : 0;
+		}
+		int total = maps.size();
+		int placed = given;
+		if (placed < total) {
+			source.sendFailure(Component.literal("Gave you " + placed + " of " + total + " maps; no room for the rest"));
+			return placed;
+		}
+		source.sendSuccess(() -> Component.literal("Gave you " + total + " maps of the railway network for a wall of "
+				+ count + " by " + count + " item frames, north at the top"), false);
+		return placed;
+	}
+
+	private static int giveMap(CommandContext<CommandSourceStack> context, int radius) throws CommandSyntaxException {
+		CommandSourceStack source = context.getSource();
+		ServerPlayer player = source.getPlayerOrException();
+		ItemStack map;
+		try {
+			map = NetworkMapItem.create(source.getServer().overworld(), VillageRailways.network().planner(),
+					player.getBlockX(), player.getBlockZ(), radius);
+		} catch (IOException e) {
+			source.sendFailure(Component.literal("Could not keep the map's scale: " + e.getMessage()));
+			return 0;
+		}
+		if (!player.addItem(map)) {
+			source.sendFailure(Component.literal("No room in your inventory for the map"));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Gave you a map of the railway network"), false);
+		return 1;
 	}
 
 	/** Plans the area on the planner thread, so the server keeps ticking, then draws the map and reports. */

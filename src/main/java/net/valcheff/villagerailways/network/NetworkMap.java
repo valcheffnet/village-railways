@@ -23,7 +23,8 @@ public final class NetworkMap {
 	private static final Color VILLAGE = new Color(0xF28C28);
 	private static final Color PLANNED = new Color(0x202020);
 	private static final Color BUILT = new Color(0x2E7D32);
-	private static final Color TRUNK = new Color(0x7B1FA2);
+	private static final Color TRUNK_BUILT = new Color(0x4A148C);
+	private static final Color TRUNK_PLANNED = new Color(0xAB47BC);
 	private static final Color OBSTACLE = new Color(0xD64545);
 	private static final Color OBSTACLE_LABEL = new Color(0x9E2B2B);
 	private static final Color LABEL = new Color(0x555555);
@@ -106,7 +107,8 @@ public final class NetworkMap {
 		}
 		g.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		for (Link link : links) {
-			g.setColor(link.status() == Link.Status.BUILT ? BUILT : link.trunk() ? TRUNK : PLANNED);
+			boolean built = link.status() == Link.Status.BUILT;
+			g.setColor(link.trunk() ? (built ? TRUNK_BUILT : TRUNK_PLANNED) : built ? BUILT : PLANNED);
 			List<Point> path = link.path();
 			for (int i = 1; i < path.size(); i++) {
 				g.drawLine(px(path.get(i - 1).x(), minX, scale), px(path.get(i - 1).z(), minZ, scale),
