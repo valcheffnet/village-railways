@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.core.BlockPos;
@@ -96,6 +97,8 @@ public class RailwayService {
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
 	/** Whether lines were planned or finished since the maps on the station walls were drawn. */
 	private volatile boolean wallsStale = true;
+	/** Generating chunks waiting for planning now. */
+	private final AtomicInteger waiting = new AtomicInteger();
 	/** When the planning that chunks wait for was last reported, in nanoseconds. */
 	private final AtomicLong lastProgress = new AtomicLong(System.nanoTime());
 	/** The squares queued for planning, done once planned. */
@@ -360,30 +363,50 @@ public class RailwayService {
 	 */
 	private void awaitPlanned(List<CompletableFuture<Void>> around) {
 		CompletableFuture<Void> all = CompletableFuture.allOf(around.toArray(CompletableFuture[]::new));
-		while (true) {
-			try {
-				all.get(PROGRESS_SECONDS, TimeUnit.SECONDS);
-				return;
-			} catch (TimeoutException e) {
-				reportProgress();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				return;
-			} catch (ExecutionException e) {
-				throw new IllegalStateException("Railway planning failed", e.getCause());
+		if (all.isDone()) {
+			return;
+		}
+		waiting.incrementAndGet();
+		try {
+			while (true) {
+				try {
+					all.get(PROGRESS_SECONDS, TimeUnit.SECONDS);
+					return;
+				} catch (TimeoutException e) {
+					reportProgress();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return;
+				} catch (ExecutionException e) {
+					throw new IllegalStateException("Railway planning failed", e.getCause());
+				}
 			}
+		} finally {
+			waiting.decrementAndGet();
 		}
 	}
 
 	private void reportProgress() {
 		long now = System.nanoTime();
 		long last = lastProgress.get();
-		if (now - last >= TimeUnit.SECONDS.toNanos(PROGRESS_SECONDS) && lastProgress.compareAndSet(last, now)) {
-			long planned = squares.values().stream().filter(CompletableFuture::isDone).count();
+		int[] progress = planningProgress();
+		if (progress != null && now - last >= TimeUnit.SECONDS.toNanos(PROGRESS_SECONDS)
+				&& lastProgress.compareAndSet(last, now)) {
 			VillageRailways.LOGGER.info("Planning railway lines before the land generates: {} of {} areas of "
-					+ SQUARE + " by " + SQUARE + " blocks",
-					planned, squares.size());
+					+ SQUARE + " by " + SQUARE + " blocks", progress[0], progress[1]);
 		}
+	}
+
+	/**
+	 * How many of the squares queued so far are planned, and how many there are, while generating chunks wait for
+	 * them; null while none waits.
+	 */
+	public int[] planningProgress() {
+		if (waiting.get() == 0) {
+			return null;
+		}
+		int planned = (int) squares.values().stream().filter(CompletableFuture::isDone).count();
+		return new int[] {planned, squares.size()};
 	}
 
 	/**

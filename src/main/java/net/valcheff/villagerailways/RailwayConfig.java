@@ -5,6 +5,8 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 import net.valcheff.villagerailways.network.PlannerSettings;
@@ -19,39 +21,100 @@ import net.valcheff.villagerailways.profile.TrackSettings;
 public final class RailwayConfig {
 	private static final String TRACK_FILE = "track.properties";
 
-	private final PlannerSettings planner;
-	private final TrackSettings track;
+	/** The settings, in the order the file, the config screen and the network carry them. */
+	public enum Setting {
+		MAX_LINKS("maxLinks", 1, 3, PlannerSettings.DEFAULT.maxLinks()),
+		MAX_LENGTH("maxLength", 300, PlannerSettings.DEFAULT.maxGroupLength(), PlannerSettings.DEFAULT.maxLength()),
+		MIN_RUN("minRun", 16, 64, PlannerSettings.DEFAULT.minRun()),
+		MAX_RUN("maxRun", 32, 128, PlannerSettings.DEFAULT.maxRun()),
+		CUT_DEPTH("cutDepth", 2, 7, TrackSettings.DEFAULT.cutDepth()),
+		PILLAR_SPACING("pillarSpacing", 4, 16, TrackSettings.DEFAULT.pillarSpacing());
 
-	private RailwayConfig(PlannerSettings planner, TrackSettings track) {
-		this.planner = planner;
-		this.track = track;
+		public final String key;
+		public final int min;
+		public final int max;
+		public final int fallback;
+
+		Setting(String key, int min, int max, int fallback) {
+			this.key = key;
+			this.min = min;
+			this.max = max;
+			this.fallback = fallback;
+		}
+
+		/** Whether a world keeps this value from its first start. */
+		public boolean keptByWorld() {
+			return this == CUT_DEPTH || this == PILLAR_SPACING;
+		}
+	}
+
+	private final int[] values;
+
+	private RailwayConfig(int[] values) {
+		this.values = values;
 	}
 
 	/** Reads the config file in {@code configDir}, and writes it back with every key and its explanation. */
 	public static RailwayConfig load(Path configDir) {
-		Path file = configDir.resolve(VillageRailways.MOD_ID + ".properties");
-		Properties props = read(file);
-		PlannerSettings defaults = PlannerSettings.DEFAULT;
-		int maxLinks = readInt(props, "maxLinks", defaults.maxLinks(), 1, 3);
-		int maxLength = readInt(props, "maxLength", defaults.maxLength(), 300, defaults.maxGroupLength());
-		int minRun = readInt(props, "minRun", defaults.minRun(), 16, 64);
-		int maxRun = readInt(props, "maxRun", defaults.maxRun(), 32, 128);
-		if (maxRun < minRun) {
-			VillageRailways.LOGGER.warn("maxRun={} is shorter than minRun={}, using {} and {}", maxRun, minRun,
-					defaults.minRun(), defaults.maxRun());
-			minRun = defaults.minRun();
-			maxRun = defaults.maxRun();
+		Properties props = read(file(configDir));
+		int[] values = new int[Setting.values().length];
+		for (Setting setting : Setting.values()) {
+			values[setting.ordinal()] = readInt(props, setting);
 		}
-		PlannerSettings planner = new PlannerSettings(maxLinks, maxLength, minRun, maxRun, defaults.clearance(),
-				defaults.stationMargin(), defaults.stationSpacing(), defaults.villageMargin(), defaults.structureMargin(),
-				defaults.minAngle(), defaults.maxOceanCrossing(), defaults.maxGroupLinks(), defaults.maxGroupLength());
-		RailwayConfig config = new RailwayConfig(planner, readTrack(props, TrackSettings.DEFAULT));
-		config.save(file);
+		RailwayConfig config = of(values);
+		config.save(configDir);
 		return config;
 	}
 
+	/**
+	 * Settings with the given values, in {@link Setting} order; a value out of its range takes the default, and so do
+	 * both straights of a staircase whose side step is shorter than its straight.
+	 */
+	public static RailwayConfig of(List<Integer> given) {
+		int[] values = new int[Setting.values().length];
+		for (Setting setting : Setting.values()) {
+			int value = setting.ordinal() < given.size() ? given.get(setting.ordinal()) : setting.fallback;
+			values[setting.ordinal()] = value >= setting.min && value <= setting.max ? value : setting.fallback;
+		}
+		return of(values);
+	}
+
+	private static RailwayConfig of(int[] values) {
+		int minRun = values[Setting.MIN_RUN.ordinal()];
+		int maxRun = values[Setting.MAX_RUN.ordinal()];
+		if (maxRun < minRun) {
+			VillageRailways.LOGGER.warn("maxRun={} is shorter than minRun={}, using {} and {}", maxRun, minRun,
+					Setting.MIN_RUN.fallback, Setting.MAX_RUN.fallback);
+			values[Setting.MIN_RUN.ordinal()] = Setting.MIN_RUN.fallback;
+			values[Setting.MAX_RUN.ordinal()] = Setting.MAX_RUN.fallback;
+		}
+		return new RailwayConfig(values);
+	}
+
+	public int get(Setting setting) {
+		return values[setting.ordinal()];
+	}
+
+	/** The values in {@link Setting} order. */
+	public List<Integer> values() {
+		List<Integer> list = new ArrayList<>();
+		for (int value : values) {
+			list.add(value);
+		}
+		return list;
+	}
+
 	public PlannerSettings planner() {
-		return planner;
+		PlannerSettings defaults = PlannerSettings.DEFAULT;
+		return new PlannerSettings(get(Setting.MAX_LINKS), get(Setting.MAX_LENGTH), get(Setting.MIN_RUN),
+				get(Setting.MAX_RUN), defaults.clearance(), defaults.stationMargin(), defaults.stationSpacing(),
+				defaults.villageMargin(), defaults.structureMargin(), defaults.minAngle(), defaults.maxOceanCrossing(),
+				defaults.maxGroupLinks(), defaults.maxGroupLength());
+	}
+
+	/** The build values for new worlds. */
+	public TrackSettings track() {
+		return new TrackSettings(get(Setting.CUT_DEPTH), get(Setting.PILLAR_SPACING));
 	}
 
 	/**
@@ -62,9 +125,9 @@ public final class RailwayConfig {
 		Path file = folder.resolve(TRACK_FILE);
 		TrackSettings kept;
 		if (Files.exists(file)) {
-			kept = readTrack(read(file), TrackSettings.DEFAULT);
+			kept = keptBy(folder);
 		} else {
-			kept = Files.exists(folder.resolve("network.json")) ? TrackSettings.DEFAULT : track;
+			kept = Files.exists(folder.resolve("network.json")) ? TrackSettings.DEFAULT : track();
 			Files.createDirectories(folder);
 			try (Writer writer = Files.newBufferedWriter(file)) {
 				writer.write("# The build values this world was first started with. Village Railways keeps them, so\n");
@@ -72,14 +135,22 @@ public final class RailwayConfig {
 				writeTrack(writer, kept);
 			}
 		}
-		if (!kept.equals(track)) {
+		if (!kept.equals(track())) {
 			VillageRailways.LOGGER.info("This world keeps cutDepth={} and pillarSpacing={} from its first start; "
 					+ "the values in the config apply to new worlds", kept.cutDepth(), kept.pillarSpacing());
 		}
 		return kept;
 	}
 
-	private void save(Path file) {
+	/** The build values a world saved in {@code folder} keeps, or the defaults for one that keeps none yet. */
+	public static TrackSettings keptBy(Path folder) {
+		Properties props = read(folder.resolve(TRACK_FILE));
+		return new TrackSettings(readInt(props, Setting.CUT_DEPTH), readInt(props, Setting.PILLAR_SPACING));
+	}
+
+	/** Writes the config file in {@code configDir} with every key and its explanation. */
+	public void save(Path configDir) {
+		Path file = file(configDir);
 		try {
 			Files.createDirectories(file.getParent());
 			try (Writer writer = Files.newBufferedWriter(file)) {
@@ -90,21 +161,25 @@ public final class RailwayConfig {
 				writer.write("# Changes to these apply to the lines planned after the next start. Lines planned before\n");
 				writer.write("# stay as they are.\n");
 				writer.write("\n# Most lines one village may have (1-3).\n");
-				writer.write("maxLinks=" + planner.maxLinks() + "\n");
+				writer.write("maxLinks=" + get(Setting.MAX_LINKS) + "\n");
 				writer.write("\n# Longest line between two villages, measured between their centres, in blocks (300-"
-						+ PlannerSettings.DEFAULT.maxGroupLength() + ").\n");
+						+ Setting.MAX_LENGTH.max + ").\n");
 				writer.write("# Trunk lines, which join groups of villages that would be left apart, may be longer.\n");
-				writer.write("maxLength=" + planner.maxLength() + "\n");
+				writer.write("maxLength=" + get(Setting.MAX_LENGTH) + "\n");
 				writer.write("\n# A line at a slant is built as a staircase of straights: the shortest straight\n");
 				writer.write("# (16-64) and the longest side step (32-128, at least minRun), in blocks.\n");
-				writer.write("minRun=" + planner.minRun() + "\n");
-				writer.write("maxRun=" + planner.maxRun() + "\n");
+				writer.write("minRun=" + get(Setting.MIN_RUN) + "\n");
+				writer.write("maxRun=" + get(Setting.MAX_RUN) + "\n");
 				writer.write("\n# A world keeps these from its first start, so changes apply to new worlds only.\n");
-				writeTrack(writer, track);
+				writeTrack(writer, track());
 			}
 		} catch (IOException e) {
 			VillageRailways.LOGGER.warn("Could not write {}", file, e);
 		}
+	}
+
+	private static Path file(Path configDir) {
+		return configDir.resolve(VillageRailways.MOD_ID + ".properties");
 	}
 
 	private static void writeTrack(Writer writer, TrackSettings settings) throws IOException {
@@ -112,11 +187,6 @@ public final class RailwayConfig {
 		writer.write("cutDepth=" + settings.cutDepth() + "\n");
 		writer.write("# Blocks between the pillars of a bridge in the open (4-16).\n");
 		writer.write("pillarSpacing=" + settings.pillarSpacing() + "\n");
-	}
-
-	private static TrackSettings readTrack(Properties props, TrackSettings defaults) {
-		return new TrackSettings(readInt(props, "cutDepth", defaults.cutDepth(), 2, 7),
-				readInt(props, "pillarSpacing", defaults.pillarSpacing(), 4, 16));
 	}
 
 	private static Properties read(Path file) {
@@ -131,20 +201,21 @@ public final class RailwayConfig {
 		return props;
 	}
 
-	private static int readInt(Properties props, String key, int fallback, int min, int max) {
-		String raw = props.getProperty(key);
+	private static int readInt(Properties props, Setting setting) {
+		String raw = props.getProperty(setting.key);
 		if (raw == null) {
-			return fallback;
+			return setting.fallback;
 		}
 		try {
 			int value = Integer.parseInt(raw.trim());
-			if (value >= min && value <= max) {
+			if (value >= setting.min && value <= setting.max) {
 				return value;
 			}
 		} catch (NumberFormatException e) {
 			// Reported below like a value out of range.
 		}
-		VillageRailways.LOGGER.warn("Invalid {}={} (allowed {}-{}), using {}", key, raw, min, max, fallback);
-		return fallback;
+		VillageRailways.LOGGER.warn("Invalid {}={} (allowed {}-{}), using {}", setting.key, raw, setting.min,
+				setting.max, setting.fallback);
+		return setting.fallback;
 	}
 }

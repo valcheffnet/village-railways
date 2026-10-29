@@ -34,6 +34,7 @@ public class VillageRailways implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		ConfigSync.register();
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				VillageRailwaysCommand.register(dispatcher));
 		// The overworld loads before its spawn chunks generate, so lines around spawn are planned in time.
@@ -96,6 +97,15 @@ public class VillageRailways implements ModInitializer {
 			throw new IllegalStateException("The overworld is not loaded");
 		}
 		return running;
+	}
+
+	/**
+	 * How far the planning that generating chunks wait for has got, as planned and queued squares, or null while
+	 * nothing waits; for the loading screen of a singleplayer world, whose server runs in the same game.
+	 */
+	public static int[] planningProgress() {
+		RailwayService running = service;
+		return running == null ? null : running.planningProgress();
 	}
 
 	/** The overworld railway network. */

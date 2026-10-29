@@ -6,15 +6,33 @@ base {
 	archivesName = 'village-railways'
 }
 
+repositories {
+	maven {
+		name = 'TerraformersMC'
+		url = 'https://maven.terraformersmc.com/releases/'
+	}
+}
+
 loom {
-	// Server-side only: compile against the server jar so any client class reference fails the build.
-	serverOnlyMinecraftJar()
+	// The common code runs on dedicated servers too, so only the client source set may use client classes.
+	splitEnvironmentSourceSets()
+
+	mods {
+		"village_railways" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
 }
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Optional: Mod Menu shows the config screen button. Not bundled, not required.
+	clientCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+	localRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
 
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
