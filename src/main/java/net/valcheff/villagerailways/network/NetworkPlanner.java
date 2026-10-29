@@ -851,8 +851,9 @@ public class NetworkPlanner {
 	 */
 	private RouteChoice bestRoute(Village a, Village b, StationLayout.Station layoutA, StationLayout.Station layoutB,
 			List<StationLayout.Slot> slotsA, List<StationLayout.Slot> slotsB, PathFilter filter) {
-		// Every route shape out of every pair of free slots. The cheap checks go first, so only routes that could be
-		// built are scored on the terrain; then the world checks run in score order.
+		// Every route shape out of every pair of free slots. The checks go first, cheapest first, so only routes that
+		// can be built are scored on the terrain, which costs the most: most routes of a long line that fails cross too
+		// much sea.
 		Set<List<Point>> routes = new LinkedHashSet<>();
 		for (StationLayout.Slot slotA : slotsA) {
 			for (StationLayout.Slot slotB : slotsB) {
@@ -876,26 +877,27 @@ public class NetworkPlanner {
 			return new RouteChoice(null, Rejection.NO_WAY_OUT);
 		}
 		Rejection firstReason = null;
-		Map<List<Point>, Double> scores = new HashMap<>();
+		boolean filtered = false;
+		List<Point> best = null;
+		double bestScore = Double.MAX_VALUE;
 		for (List<Point> path : routes) {
 			Rejection reason = passesThroughVillage(path, a, b) ? Rejection.THROUGH_VILLAGE
 					: comesTooClose(path, a, b) ? Rejection.TOO_CLOSE_TO_LINE
 					: null;
-			if (reason == null) {
-				scores.put(path, scorer.score(path));
-			} else if (firstReason == null) {
-				firstReason = reason;
+			if (reason != null) {
+				firstReason = firstReason == null ? reason : firstReason;
+			} else if (!filter.accepts(path)) {
+				filtered = true;
+			} else {
+				double score = scorer.score(path);
+				if (score < bestScore) {
+					best = path;
+					bestScore = score;
+				}
 			}
 		}
-		List<List<Point>> ranked = new ArrayList<>(scores.keySet());
-		ranked.sort(Comparator.comparingDouble(scores::get));
-		for (List<Point> path : ranked) {
-			if (filter.accepts(path)) {
-				return new RouteChoice(path, null);
-			}
-			firstReason = Rejection.FILTERED;
-		}
-		return new RouteChoice(null, firstReason);
+		return best != null ? new RouteChoice(best, null)
+				: new RouteChoice(null, filtered ? Rejection.FILTERED : firstReason);
 	}
 
 	/** Whether a route leaves both its stations straight for {@value ExitFinder#APPROACH} blocks before it turns. */
