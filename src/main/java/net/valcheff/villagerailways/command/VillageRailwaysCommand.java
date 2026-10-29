@@ -161,14 +161,13 @@ public final class VillageRailwaysCommand {
 			given += player.addItem(map) ? 1 : 0;
 		}
 		int total = maps.size();
-		int placed = given;
-		if (placed < total) {
-			source.sendFailure(Component.literal("Gave you " + placed + " of " + total + " maps; no room for the rest"));
-			return placed;
+		if (given < total) {
+			source.sendFailure(Component.literal("Gave you " + given + " of " + total + " maps; no room for the rest"));
+			return given;
 		}
 		source.sendSuccess(() -> Component.literal("Gave you " + total + " maps of the railway network for a wall of "
 				+ count + " by " + count + " item frames, north at the top"), false);
-		return placed;
+		return given;
 	}
 
 	private static int giveMap(CommandContext<CommandSourceStack> context, int radius) throws CommandSyntaxException {

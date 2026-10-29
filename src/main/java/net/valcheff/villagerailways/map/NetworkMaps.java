@@ -65,10 +65,7 @@ public final class NetworkMaps {
 
 	/** Whether the wall of a western station has its maps already. */
 	public static boolean hasWall(VillagePair station) {
-		NetworkMaps maps = current;
-		if (maps == null) {
-			return true;
-		}
+		NetworkMaps maps = loaded();
 		synchronized (maps) {
 			return maps.walls.containsKey(key(station));
 		}
@@ -76,10 +73,7 @@ public final class NetworkMaps {
 
 	/** The maps on the walls of all western stations. */
 	public static List<MapId> wallMaps() {
-		NetworkMaps maps = current;
-		if (maps == null) {
-			return List.of();
-		}
+		NetworkMaps maps = loaded();
 		synchronized (maps) {
 			return maps.walls.values().stream().flatMap(List::stream).map(MapId::new).toList();
 		}
