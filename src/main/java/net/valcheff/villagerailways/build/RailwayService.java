@@ -7,7 +7,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,17 +46,22 @@ import net.valcheff.villagerailways.profile.TrackSettings;
 import net.valcheff.villagerailways.structure.StructurePredictor;
 
 /**
- * Runs the railway network of the overworld: plans lines ahead of the players on a background thread and builds them
- * into chunks as the chunks generate.
+ * Runs the railway network of the overworld: plans lines ahead of chunk generation on a background thread and builds
+ * them into chunks as the chunks generate.
  *
  * <p>The land is explored in squares of {@value #SQUARE} blocks. Around spawn the squares are planned before the
- * first chunk generates; after that every player keeps the squares within {@value #PLAN_AHEAD} squares planned, which
- * is far beyond view distance, so lines, trunk lines included, are in place before their chunks are made. Villages
- * at the edge of what is planned get their lines to newly found villages as the planned area grows.
+ * first chunk generates. After that every player, and every chunk that generates, keeps the squares within
+ * {@value #PLAN_AHEAD} squares planned, so lines, trunk lines included, are in place before their chunks are made: a
+ * chunk waits for the squares around it before it generates, which matters when chunks are generated ahead of any
+ * player, as world pregenerators do. Players keep the planning far enough ahead that their chunks seldom wait.
+ * Villages at the edge of what is planned get their lines to newly found villages as the planned area grows.
  */
 public class RailwayService {
 	private static final int SQUARE = 1024;
-	/** Squares planned around each player: three reach past the longest trunk line plus view distance. */
+	/**
+	 * Squares planned around each player and each generating chunk: three reach past the longest trunk line and the
+	 * ground its far village needs explored.
+	 */
 	private static final int PLAN_AHEAD = 3;
 	private static final int SPAWN_SQUARES = 2;
 	/** Ticks players may spend in a chunk before it is closed to new lines: two minutes. */
@@ -86,7 +91,8 @@ public class RailwayService {
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
 	/** Whether lines were planned or finished since the maps on the station walls were drawn. */
 	private volatile boolean wallsStale = true;
-	private final Set<Long> queuedSquares = ConcurrentHashMap.newKeySet();
+	/** The squares queued for planning, done once planned. */
+	private final Map<Long, CompletableFuture<Void>> squares = new ConcurrentHashMap<>();
 	private final ExecutorService planner = Executors.newSingleThreadExecutor(runnable -> {
 		Thread thread = new Thread(runnable, "Village Railways planner");
 		thread.setDaemon(true);
@@ -124,6 +130,7 @@ public class RailwayService {
 		for (int squareX = -SPAWN_SQUARES; squareX < SPAWN_SQUARES; squareX++) {
 			for (int squareZ = -SPAWN_SQUARES; squareZ < SPAWN_SQUARES; squareZ++) {
 				service.planSquare(squareX, squareZ);
+				service.squares.put(ChunkPos.pack(squareX, squareZ), CompletableFuture.completedFuture(null));
 			}
 		}
 		return service;
@@ -146,18 +153,32 @@ public class RailwayService {
 	/** Queues planning for the squares around every player that are not planned yet. */
 	public void planAroundPlayers() {
 		for (ServerPlayer player : level.players()) {
-			int squareX = Math.floorDiv(player.getBlockX(), SQUARE);
-			int squareZ = Math.floorDiv(player.getBlockZ(), SQUARE);
-			for (int dx = -PLAN_AHEAD; dx <= PLAN_AHEAD; dx++) {
-				for (int dz = -PLAN_AHEAD; dz <= PLAN_AHEAD; dz++) {
+			planAround(player.getBlockX(), player.getBlockZ());
+		}
+	}
+
+	/**
+	 * Queues planning for the squares within {@value #PLAN_AHEAD} squares of a block that are not queued yet, nearest
+	 * first, and returns them all, done once planned.
+	 */
+	private List<CompletableFuture<Void>> planAround(int blockX, int blockZ) {
+		int squareX = Math.floorDiv(blockX, SQUARE);
+		int squareZ = Math.floorDiv(blockZ, SQUARE);
+		List<CompletableFuture<Void>> around = new ArrayList<>();
+		for (int ring = 0; ring <= PLAN_AHEAD; ring++) {
+			for (int dx = -ring; dx <= ring; dx++) {
+				for (int dz = -ring; dz <= ring; dz++) {
+					if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) {
+						continue;
+					}
 					int x = squareX + dx;
 					int z = squareZ + dz;
-					if (queuedSquares.add(ChunkPos.pack(x, z))) {
-						planner.execute(() -> planSquare(x, z));
-					}
+					around.add(squares.computeIfAbsent(ChunkPos.pack(x, z),
+							key -> CompletableFuture.runAsync(() -> planSquare(x, z), planner)));
 				}
 			}
 		}
+		return around;
 	}
 
 	/**
@@ -176,7 +197,6 @@ public class RailwayService {
 	}
 
 	private void planSquare(int squareX, int squareZ) {
-		queuedSquares.add(ChunkPos.pack(squareX, squareZ));
 		BlockPos center = new BlockPos(squareX * SQUARE + SQUARE / 2, 0, squareZ * SQUARE + SQUARE / 2);
 		try {
 			RailwayNetwork.Result result = network.explore(center, SQUARE / 2 - 1);
@@ -318,8 +338,12 @@ public class RailwayService {
 		}
 	}
 
-	/** Builds every line that runs through a chunk; called once per chunk, while it generates. */
+	/**
+	 * Builds every line that runs through a chunk; called once per chunk, while it generates. The chunk waits until
+	 * the squares around it are planned, so no line that should run through it is planned after it is made.
+	 */
 	public void decorate(WorldGenLevel region, ChunkPos chunk) {
+		planAround(chunk.getMinBlockX(), chunk.getMinBlockZ()).forEach(CompletableFuture::join);
 		List<VillagePair> keys = buildState.decorate(chunk);
 		List<TrackPlan> toBuild = new ArrayList<>();
 		List<VillagePair> built = new ArrayList<>();
