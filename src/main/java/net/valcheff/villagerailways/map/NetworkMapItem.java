@@ -44,9 +44,8 @@ public final class NetworkMapItem {
 	private static final byte TRUNK_BUILT = MapColor.COLOR_PURPLE.getPackedId(MapColor.Brightness.LOW);
 	private static final byte TRUNK_PLANNED = MapColor.COLOR_PURPLE.getPackedId(MapColor.Brightness.HIGH);
 	private static final byte BLOCKED = MapColor.COLOR_RED.getPackedId(MapColor.Brightness.NORMAL);
-	/** Pixels across a line, so it shows in an item frame; a trunk line, a double track, is wider. */
+	/** Pixels across a line, so it shows in an item frame; a trunk line only differs in colour. */
 	private static final int LINE_WIDTH = 2;
-	private static final int TRUNK_WIDTH = 3;
 
 	private NetworkMapItem() {
 	}
@@ -146,7 +145,6 @@ public final class NetworkMapItem {
 				case BLOCKED -> BLOCKED;
 				case PLANNED -> link.trunk() ? TRUNK_PLANNED : PLANNED;
 			};
-			int lineWidth = link.trunk() ? TRUNK_WIDTH : LINE_WIDTH;
 			List<Point> path = link.path();
 			for (int i = 1; i < path.size(); i++) {
 				Point from = path.get(i - 1);
@@ -154,7 +152,7 @@ public final class NetworkMapItem {
 				int steps = Math.max(Math.abs(to.x() - from.x()), Math.abs(to.z() - from.z()));
 				for (int step = 0; step <= steps; step++) {
 					canvas.set(from.x() + Integer.signum(to.x() - from.x()) * step,
-							from.z() + Integer.signum(to.z() - from.z()) * step, color, lineWidth);
+							from.z() + Integer.signum(to.z() - from.z()) * step, color, LINE_WIDTH);
 				}
 			}
 		}
