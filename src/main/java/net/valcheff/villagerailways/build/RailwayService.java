@@ -9,9 +9,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -67,6 +70,8 @@ public class RailwayService {
 	/** Ticks players may spend in a chunk before it is closed to new lines: two minutes. */
 	private static final int LIVED_TICKS = 2400;
 	private static final int LIVED_CHECK_INTERVAL = 40;
+	/** Seconds between reports of the planning that generating chunks wait for, as at the first start of a world. */
+	private static final int PROGRESS_SECONDS = 3;
 	/** Chunks around each player checked for time spent, beyond the simulation distance. */
 	private static final int LIVED_RADIUS = 12;
 	/** Chunks given their late lines per tick, so a burst does not stall the server. */
@@ -91,6 +96,8 @@ public class RailwayService {
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
 	/** Whether lines were planned or finished since the maps on the station walls were drawn. */
 	private volatile boolean wallsStale = true;
+	/** When the planning that chunks wait for was last reported, in nanoseconds. */
+	private final AtomicLong lastProgress = new AtomicLong(System.nanoTime());
 	/** The squares queued for planning, done once planned. */
 	private final Map<Long, CompletableFuture<Void>> squares = new ConcurrentHashMap<>();
 	private final ExecutorService planner = Executors.newSingleThreadExecutor(runnable -> {
@@ -347,11 +354,44 @@ public class RailwayService {
 	}
 
 	/**
+	 * Waits until the given squares are planned. While it takes long, as it does at the first start of a world, how
+	 * far the planning has got goes to the log every {@value #PROGRESS_SECONDS} seconds, so the start does not look
+	 * stuck.
+	 */
+	private void awaitPlanned(List<CompletableFuture<Void>> around) {
+		CompletableFuture<Void> all = CompletableFuture.allOf(around.toArray(CompletableFuture[]::new));
+		while (true) {
+			try {
+				all.get(PROGRESS_SECONDS, TimeUnit.SECONDS);
+				return;
+			} catch (TimeoutException e) {
+				reportProgress();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			} catch (ExecutionException e) {
+				throw new IllegalStateException("Railway planning failed", e.getCause());
+			}
+		}
+	}
+
+	private void reportProgress() {
+		long now = System.nanoTime();
+		long last = lastProgress.get();
+		if (now - last >= TimeUnit.SECONDS.toNanos(PROGRESS_SECONDS) && lastProgress.compareAndSet(last, now)) {
+			long planned = squares.values().stream().filter(CompletableFuture::isDone).count();
+			VillageRailways.LOGGER.info("Planning railway lines before the land generates: {} of {} areas of "
+					+ SQUARE + " by " + SQUARE + " blocks",
+					planned, squares.size());
+		}
+	}
+
+	/**
 	 * Builds every line that runs through a chunk; called once per chunk, while it generates. The chunk waits until
 	 * the squares around it are planned, so no line that should run through it is planned after it is made.
 	 */
 	public void decorate(WorldGenLevel region, ChunkPos chunk) {
-		planAround(chunk.getMinBlockX(), chunk.getMinBlockZ()).forEach(CompletableFuture::join);
+		awaitPlanned(planAround(chunk.getMinBlockX(), chunk.getMinBlockZ()));
 		List<VillagePair> keys = buildState.decorate(chunk);
 		List<TrackPlan> toBuild = new ArrayList<>();
 		List<VillagePair> built = new ArrayList<>();
