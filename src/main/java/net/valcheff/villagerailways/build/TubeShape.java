@@ -96,7 +96,7 @@ final class TubeShape {
 						distance[column] = square;
 						manhattan[column] = straight;
 						track[column] = line.track()[i];
-						ramp[column] = isRamp(line, i);
+						ramp[column] = line.isRamp(i);
 						index[column] = i;
 					}
 				}
@@ -152,7 +152,7 @@ final class TubeShape {
 			}
 			Direction back = j > 0 ? line.direction(j, j - 1) : line.direction(j, j + 1).getOpposite();
 			Direction ahead = j < line.length() - 1 ? line.direction(j, j + 1) : back.getOpposite();
-			int height = isRamp(line, j) ? 5 : 3;
+			int height = line.isRamp(j) ? 5 : 3;
 			for (Direction across : new Direction[] {back.getClockWise(), ahead.getClockWise()}) {
 				for (int offset = -1; offset <= 1; offset++) {
 					int x = line.x()[j] + across.getStepX() * offset;
@@ -163,11 +163,6 @@ final class TubeShape {
 				}
 			}
 		}
-	}
-
-	private static boolean isRamp(TrackPlan line, int i) {
-		return (i > 0 && line.track()[i - 1] != line.track()[i])
-				|| (i < line.length() - 1 && line.track()[i + 1] != line.track()[i]);
 	}
 
 	private boolean near(int x, int z, int margin) {

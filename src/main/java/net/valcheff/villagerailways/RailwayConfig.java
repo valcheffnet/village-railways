@@ -163,10 +163,7 @@ public final class RailwayConfig {
 		return chosen == null ? track : new TrackSettings(track.cutDepth(), track.pillarSpacing(), chosen);
 	}
 
-	/**
-	 * The build values a world saved in {@code folder} keeps, or the defaults for one that keeps none yet. One that
-	 * kept its values before sea tubes came has none, as the default.
-	 */
+	/** The build values a world saved in {@code folder} keeps, or the defaults for one that keeps none yet. */
 	public static TrackSettings keptBy(Path folder) {
 		Properties props = read(folder.resolve(TRACK_FILE));
 		return new TrackSettings(readInt(props, Setting.CUT_DEPTH), readInt(props, Setting.PILLAR_SPACING),

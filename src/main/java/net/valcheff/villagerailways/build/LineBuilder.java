@@ -703,7 +703,7 @@ public final class LineBuilder {
 			}
 		}
 		for (int j = i - 1; j <= i + 1; j++) {
-			if (isRamp(line, j)) {
+			if (line.isRamp(j)) {
 				return false;
 			}
 		}
@@ -1795,12 +1795,7 @@ public final class LineBuilder {
 	}
 
 	private boolean isRamp(int i) {
-		return isRamp(plan, i);
-	}
-
-	private static boolean isRamp(TrackPlan line, int i) {
-		return (i > 0 && line.track()[i - 1] != line.track()[i])
-				|| (i < line.length() - 1 && line.track()[i + 1] != line.track()[i]);
+		return plan.isRamp(i);
 	}
 
 	/** Which way the track rises at a ramp block. */

@@ -43,6 +43,11 @@ public record TrackPlan(int[] x, int[] z, int[] track, int[] ground, int[] water
 		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
 	}
 
+	/** Whether the rail at block i slopes: the block next to it on either side lies higher or lower. */
+	public boolean isRamp(int i) {
+		return (i > 0 && track[i - 1] != track[i]) || (i < x.length - 1 && track[i + 1] != track[i]);
+	}
+
 	/** The direction from block {@code from} to the neighbouring block {@code to}. */
 	public Direction direction(int from, int to) {
 		int dx = x[to] - x[from];
