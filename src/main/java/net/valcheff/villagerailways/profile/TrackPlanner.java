@@ -62,9 +62,11 @@ public class TrackPlanner {
 	}
 
 	private final TerrainSampler terrain;
+	private final int cutDepth;
 
-	public TrackPlanner(ServerLevel level) {
+	public TrackPlanner(ServerLevel level, TrackSettings settings) {
 		this.terrain = new TerrainSampler(level);
+		this.cutDepth = settings.cutDepth();
 	}
 
 	/**
@@ -86,7 +88,7 @@ public class TrackPlanner {
 			boolean openEnd, Area clear) {
 		Layout layout = layout(path);
 		int[] track = HeightProfile.plan(layout.ground(), layout.water(), layout.corner(), startHeight, endHeight,
-				trunk == null ? 1 : DOUBLE_CORNER_CLEARANCE);
+				trunk == null ? 1 : DOUBLE_CORNER_CLEARANCE, cutDepth);
 		if (track == null) {
 			return null;
 		}
@@ -186,10 +188,10 @@ public class TrackPlanner {
 		return column.water() == HeightProfile.DRY ? column.ground() : column.water() + 1;
 	}
 
-	private static TrackPlan plan(Layout layout, int[] track) {
+	private TrackPlan plan(Layout layout, int[] track) {
 		Section[] sections = new Section[track.length];
 		for (int i = 0; i < track.length; i++) {
-			sections[i] = Section.of(track[i], layout.ground()[i], layout.water()[i]);
+			sections[i] = Section.of(track[i], layout.ground()[i], layout.water()[i], cutDepth);
 		}
 		return new TrackPlan(layout.x(), layout.z(), track, layout.ground(), layout.water(), layout.corner(), sections,
 				new int[0], new int[0], List.of(), new int[0], false);
@@ -235,7 +237,7 @@ public class TrackPlanner {
 		for (int side : new int[] {-TUNNEL_REACH, TUNNEL_REACH}) {
 			TerrainSampler.Column column = terrain.sample(line.x()[i] + left.getStepX() * side,
 					line.z()[i] + left.getStepZ() * side);
-			if (column.water() != HeightProfile.DRY || column.ground() - line.track()[i] <= Section.MAX_TRENCH) {
+			if (column.water() != HeightProfile.DRY || column.ground() - line.track()[i] <= cutDepth) {
 				return false;
 			}
 		}

@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -39,7 +40,7 @@ public class VillageRailways implements ModInitializer {
 			if (level.dimension() == Level.OVERWORLD) {
 				try {
 					long started = System.nanoTime();
-					service = RailwayService.start(level);
+					service = RailwayService.start(level, RailwayConfig.load(FabricLoader.getInstance().getConfigDir()));
 					LOGGER.info("Railway network ready in {} ms", (System.nanoTime() - started) / 1_000_000);
 				} catch (IOException e) {
 					throw new UncheckedIOException("Could not load the railway network of this world", e);

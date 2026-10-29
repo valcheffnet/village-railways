@@ -27,6 +27,15 @@ class HeightProfileTest {
 	}
 
 	@Test
+	void shallowerCutDepthTunnelsTheLowHill() {
+		int[] ground = filled(300, 70);
+		Arrays.fill(ground, 60, 90, 74);
+		int[] track = HeightProfile.plan(ground, dry(300), new boolean[300], 70, 70, 1, 3);
+		assertTrue(Arrays.stream(track).allMatch(y -> y == 70), "the line stays level");
+		assertEquals(Section.TUNNEL, Section.of(track[70], ground[70], HeightProfile.DRY, 3));
+	}
+
+	@Test
 	void waterIsBridgedAboveItsSurface() {
 		int[] ground = filled(200, 70);
 		int[] water = dry(200);
@@ -85,7 +94,7 @@ class HeightProfileTest {
 		}
 		boolean[] corners = new boolean[length];
 		corners[140] = true;
-		int[] track = HeightProfile.plan(ground, dry(length), corners, 70, 80, 3);
+		int[] track = HeightProfile.plan(ground, dry(length), corners, 70, 80, 3, Section.MAX_TRENCH);
 		for (int i = 1; i < length; i++) {
 			if (track[i] != track[i - 1]) {
 				assertTrue(Math.abs(i - 140) > 3 && Math.abs(i - 1 - 140) > 3, "ramp near the corner at " + i);

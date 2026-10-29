@@ -50,20 +50,21 @@ public final class HeightProfile {
 	 * @param end     track height at the second station
 	 */
 	public static int[] plan(int[] ground, int[] water, boolean[] corners, int start, int end) {
-		return plan(ground, water, corners, start, end, 1);
+		return plan(ground, water, corners, start, end, 1, Section.MAX_TRENCH);
 	}
 
 	/**
-	 * The track heights for a line whose ramps keep {@code cornerClearance} blocks from every corner, or null when no
-	 * track keeps above every stretch of water.
+	 * The track heights for a line whose ramps keep {@code cornerClearance} blocks from every corner and whose open
+	 * cuts are at most {@code maxTrench} deep, or null when no track keeps above every stretch of water.
 	 */
-	public static int[] plan(int[] ground, int[] water, boolean[] corners, int start, int end, int cornerClearance) {
+	public static int[] plan(int[] ground, int[] water, boolean[] corners, int start, int end, int cornerClearance,
+			int maxTrench) {
 		int length = ground.length;
 		boolean[] mayRamp = rampAllowed(corners, length, cornerClearance);
 		int low = Math.min(start, end);
 		int high = Math.max(start, end);
 		for (int i = 0; i < length; i++) {
-			low = Math.min(low, ground[i] - Section.MAX_TRENCH - 1);
+			low = Math.min(low, ground[i] - maxTrench - 1);
 			high = Math.max(high, Math.max(ground[i], water[i] == DRY ? ground[i] : water[i] + 1));
 		}
 		int levels = high - low + 1;
@@ -73,7 +74,7 @@ public final class HeightProfile {
 		// For every block and state, the move the step before ended with; the level follows from the move.
 		byte[][] from = new byte[length][];
 		Arrays.fill(cost, UNREACHABLE);
-		cost[(start - low) * MOVES + LANDING] = blockCost(start, ground[0], water[0]);
+		cost[(start - low) * MOVES + LANDING] = blockCost(start, ground[0], water[0], maxTrench);
 		for (int i = 0; i + 1 < length; i++) {
 			Arrays.fill(next, UNREACHABLE);
 			byte[] previous = new byte[states];
@@ -89,7 +90,7 @@ public final class HeightProfile {
 				boolean down = move >= FIRST_DOWN;
 				int flatMove = up || down ? 1 : Math.min(move + 1, LANDING);
 				relax(next, previous, level * MOVES + flatMove, move,
-						cost[state] + blockCost(track, ground[i + 1], water[i + 1]));
+						cost[state] + blockCost(track, ground[i + 1], water[i + 1], maxTrench));
 				if (!slopeHere) {
 					continue;
 				}
@@ -97,12 +98,12 @@ public final class HeightProfile {
 				if (level + 1 < levels && (rested || (up && move - FIRST_UP + 1 < MAX_RAMP))) {
 					int upMove = up ? move + 1 : FIRST_UP;
 					relax(next, previous, (level + 1) * MOVES + upMove, move, cost[state] + RAMP_BLOCK_COST
-							+ (up ? 0 : RAMP_START_COST) + blockCost(track + 1, ground[i + 1], water[i + 1]));
+							+ (up ? 0 : RAMP_START_COST) + blockCost(track + 1, ground[i + 1], water[i + 1], maxTrench));
 				}
 				if (level > 0 && (rested || (down && move - FIRST_DOWN + 1 < MAX_RAMP))) {
 					int downMove = down ? move + 1 : FIRST_DOWN;
 					relax(next, previous, (level - 1) * MOVES + downMove, move, cost[state] + RAMP_BLOCK_COST
-							+ (down ? 0 : RAMP_START_COST) + blockCost(track - 1, ground[i + 1], water[i + 1]));
+							+ (down ? 0 : RAMP_START_COST) + blockCost(track - 1, ground[i + 1], water[i + 1], maxTrench));
 				}
 			}
 			from[i + 1] = previous;
@@ -168,11 +169,11 @@ public final class HeightProfile {
 	 * height, so it loses to going down on low ground and wins over deep, short valleys. Over water a bridge is the
 	 * only way and costs less.
 	 */
-	static long blockCost(int track, int ground, int water) {
+	static long blockCost(int track, int ground, int water, int maxTrench) {
 		if (water != DRY) {
 			return track > water ? WATER_BRIDGE_COST + 5L * (track - ground) : UNREACHABLE;
 		}
-		Section section = Section.of(track, ground, water);
+		Section section = Section.of(track, ground, water, maxTrench);
 		int difference = Math.abs(track - ground);
 		return switch (section) {
 			case FLAT -> 0;

@@ -23,6 +23,7 @@ import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.storage.LevelResource;
+import net.valcheff.villagerailways.RailwayConfig;
 import net.valcheff.villagerailways.VillageRailways;
 import net.valcheff.villagerailways.network.Link;
 import net.valcheff.villagerailways.network.NetworkPlanner;
@@ -34,6 +35,7 @@ import net.valcheff.villagerailways.network.Village;
 import net.valcheff.villagerailways.profile.TerrainSampler;
 import net.valcheff.villagerailways.profile.TrackPlan;
 import net.valcheff.villagerailways.profile.TrackPlanner;
+import net.valcheff.villagerailways.profile.TrackSettings;
 import net.valcheff.villagerailways.structure.StructurePredictor;
 
 /**
@@ -71,6 +73,7 @@ public class RailwayService {
 	private final RailwayNetwork network;
 	private final BuildState buildState;
 	private final TrackPlanner trackPlanner;
+	private final TrackSettings trackSettings;
 	private final TerrainSampler terrain;
 	private final Map<VillagePair, Link> lines = new ConcurrentHashMap<>();
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
@@ -81,22 +84,24 @@ public class RailwayService {
 		return thread;
 	});
 
-	private RailwayService(ServerLevel level, RailwayNetwork network, BuildState buildState) {
+	private RailwayService(ServerLevel level, RailwayNetwork network, BuildState buildState,
+			TrackSettings trackSettings) {
 		this.level = level;
 		this.network = network;
 		this.buildState = buildState;
-		this.trackPlanner = new TrackPlanner(level);
+		this.trackSettings = trackSettings;
+		this.trackPlanner = new TrackPlanner(level, trackSettings);
 		this.terrain = new TerrainSampler(level);
 	}
 
 	/** Loads the network and building state of the overworld and plans the land around the world origin. */
-	public static RailwayService start(ServerLevel overworld) throws IOException {
+	public static RailwayService start(ServerLevel overworld, RailwayConfig config) throws IOException {
 		Path root = overworld.getServer().getWorldPath(LevelResource.ROOT);
 		Path folder = root.resolve("village_railways");
 		BuildState buildState = BuildState.load(folder, DimensionType.getStorageFolder(Level.OVERWORLD, root).resolve("region"));
 		RailwayNetwork network = RailwayNetwork.load(overworld, StructurePredictor.villages(overworld),
-				path -> !buildState.touchesClosed(path));
-		RailwayService service = new RailwayService(overworld, network, buildState);
+				path -> !buildState.touchesClosed(path), config.planner());
+		RailwayService service = new RailwayService(overworld, network, buildState, config.trackFor(folder));
 		network.planner().setUnbuilt(link -> buildState.isUnbuilt(link.key()));
 		List<Link> tracks = new ArrayList<>(network.planner().links());
 		tracks.addAll(network.planner().stations());
@@ -208,7 +213,8 @@ public class RailwayService {
 			}
 			if (!toBuild.isEmpty()) {
 				LineBuilder.Reachable loaded = (x, z) -> level.getChunkSource().getChunkNow(x, z) != null;
-				LineBuilder.build(level, chunk, toBuild, loaded, builtWith(toBuild, entry.getValue(), loaded));
+				LineBuilder.build(level, chunk, toBuild, loaded, builtWith(toBuild, entry.getValue(), loaded),
+						trackSettings);
 				for (VillagePair key : entry.getValue()) {
 					if (plans.get(key) != null && plans.get(key).isPresent()) {
 						buildState.markBuilt(entry.getKey(), key);
@@ -261,7 +267,7 @@ public class RailwayService {
 			return;
 		}
 		LineBuilder.Reachable neighbours = (x, z) -> Math.abs(x - chunk.x()) <= 1 && Math.abs(z - chunk.z()) <= 1;
-		LineBuilder.build(region, chunk, toBuild, neighbours, builtWith(toBuild, built, neighbours));
+		LineBuilder.build(region, chunk, toBuild, neighbours, builtWith(toBuild, built, neighbours), trackSettings);
 		long packed = ChunkPos.pack(chunk.x(), chunk.z());
 		for (VillagePair key : built) {
 			buildState.markBuilt(packed, key);

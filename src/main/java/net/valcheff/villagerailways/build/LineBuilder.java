@@ -46,6 +46,7 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlac
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import net.valcheff.villagerailways.profile.Section;
 import net.valcheff.villagerailways.profile.TrackPlan;
+import net.valcheff.villagerailways.profile.TrackSettings;
 
 /**
  * Builds the part of a line that falls into one chunk, while the chunk generates.
@@ -65,11 +66,10 @@ import net.valcheff.villagerailways.profile.TrackPlan;
  * at each end, the double one where a second rail runs beside the line. Where a tunnel
  * runs through a cave it becomes a plank bridge on plank pillars, like an old mine, under fence frames that reach a
  * few blocks into the rock at either end; a short one gets a railing with lanterns instead. A bridge in the open is a
- * cobblestone deck with a pillar every {@value #PILLAR_SPACING} blocks, a railing with lanterns, and a double track; a
+ * cobblestone deck on pillars a few blocks apart, a railing with lanterns, and a double track; a
  * fill is cobblestone up to the bed.
  */
 public final class LineBuilder {
-	private static final int PILLAR_SPACING = 9;
 	/**
 	 * A torch with a powered rail on flat track every this many blocks; every second one has a powered rail on either
 	 * side as well.
@@ -208,11 +208,13 @@ public final class LineBuilder {
 	/** Every block placed in this chunk, checked at the end for what holds it up. */
 	private final Set<Long> placed = new HashSet<>();
 	private boolean lining;
+	private final TrackSettings settings;
 
 	private LineBuilder(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> lines, Reachable reachable,
-			Built built) {
+			Built built, TrackSettings settings) {
 		this.level = level;
 		this.chunk = chunk;
+		this.settings = settings;
 		List<TrackPlan> all = new ArrayList<>();
 		for (TrackPlan line : lines) {
 			all.add(line);
@@ -246,8 +248,8 @@ public final class LineBuilder {
 	 * again.
 	 */
 	public static void build(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> plans, Reachable reachable,
-			Built built) {
-		new LineBuilder(level, chunk, plans, reachable, built).build();
+			Built built, TrackSettings settings) {
+		new LineBuilder(level, chunk, plans, reachable, built, settings).build();
 	}
 
 	private void build() {
@@ -798,7 +800,7 @@ public final class LineBuilder {
 			return;
 		}
 		set(x, track - 1, z, STONE);
-		if (distance == 0 && i % PILLAR_SPACING == 0) {
+		if (distance == 0 && i % settings.pillarSpacing() == 0) {
 			for (int y = track - 2; y > level.getMinY(); y--) {
 				BlockState state = level.getBlockState(pos.set(x, y, z));
 				if (state.isSolid() && state.getFluidState().isEmpty()) {
@@ -1322,7 +1324,7 @@ public final class LineBuilder {
 	 */
 	private int cutTop(int i) {
 		int track = plan.track()[i];
-		return track + Math.max(Section.MAX_TRENCH, plan.ground()[i] - track) + 1;
+		return track + Math.max(settings.cutDepth(), plan.ground()[i] - track) + 1;
 	}
 
 	/**

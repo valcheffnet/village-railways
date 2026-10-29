@@ -39,12 +39,12 @@ public class RailwayNetwork {
 	 * Loads the network of a level from its save.
 	 *
 	 * @param buildable turns down paths that can no longer be built, such as ones through chunks that already exist
+	 * @param settings  the rules for lines planned from now on
 	 */
-	public static RailwayNetwork load(ServerLevel level, StructurePredictor predictor, NetworkPlanner.PathFilter buildable)
-			throws IOException {
+	public static RailwayNetwork load(ServerLevel level, StructurePredictor predictor, NetworkPlanner.PathFilter buildable,
+			PlannerSettings settings) throws IOException {
 		Path folder = level.getServer().getWorldPath(LevelResource.ROOT).resolve("village_railways");
 		NetworkStore store = new NetworkStore(folder);
-		PlannerSettings settings = PlannerSettings.DEFAULT;
 		NetworkPlanner planner = store.load(settings);
 		planner.setRouteScorer(new TerrainScorer(level));
 		return new RailwayNetwork(predictor, planner, store, new OceanFilter(level, settings.maxOceanCrossing()),
