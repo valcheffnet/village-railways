@@ -535,9 +535,11 @@ public class NetworkPlanner {
 		};
 		int reach = EXIT_MARGIN + settings.villageMargin();
 		int[] area = {village.minX() - reach, village.minZ() - reach, village.maxX() + reach, village.maxZ() + reach};
-		// The footprint and the band just round it are closed, all but the strip the station stands on.
+		// The footprint and the band just round it are closed, all but the strip the station stands on. A western
+		// station's second track runs on the village side of that strip, so a way from its ends keeps that much less.
+		int band = settings.stationMargin() - 1 - (StationLayout.Station.innerOf(slot) != null ? DOUBLE_TRACK : 0);
 		ExitGrid grid = new ExitGrid(area, List.of(new Box(village.minX(), village.minZ(), village.maxX(), village.maxZ())),
-				settings.stationMargin() - 1);
+				band);
 		Link own = stationOf(village.id());
 		if (own != null && own.trunk() || tryingWestern.contains(village.id())) {
 			grid.close(station.house());
