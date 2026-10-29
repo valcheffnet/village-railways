@@ -68,7 +68,8 @@ import net.valcheff.villagerailways.profile.TrackSettings;
  * runs through a cave it becomes a plank bridge on plank pillars, like an old mine, under fence frames that reach a
  * few blocks into the rock at either end; a short one gets a railing with lanterns instead. A bridge in the open is a
  * cobblestone deck on pillars a few blocks apart, a railing with lanterns, and a double track; a
- * fill is cobblestone up to the bed.
+ * fill is cobblestone up to the bed. Under a sea the track runs, double where it can, through a glass tube, a
+ * {@link TubeShape}, with a floor of prismarine bricks and ribs of them on columns, each with a sea lantern at the top.
  */
 public final class LineBuilder {
 	/**
@@ -131,6 +132,10 @@ public final class LineBuilder {
 	private static final BlockState FENCE = Blocks.OAK_FENCE.defaultBlockState();
 	private static final BlockState RAILING = Blocks.SPRUCE_FENCE.defaultBlockState();
 	private static final BlockState COBWEB = Blocks.COBWEB.defaultBlockState();
+	private static final BlockState GLASS = Blocks.GLASS.defaultBlockState();
+	private static final BlockState PRISMARINE = Blocks.PRISMARINE_BRICKS.defaultBlockState();
+	private static final BlockState SEA_LANTERN = Blocks.SEA_LANTERN.defaultBlockState();
+	private static final BlockState WATER = Blocks.WATER.defaultBlockState();
 	/** The halt's building, a structure file drawn with the track along +x and the building towards +z. */
 	private static final String HALT = "halt";
 	/**
@@ -212,6 +217,10 @@ public final class LineBuilder {
 	private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 	/** Blocks cleared for the lines in this chunk; sealing and beds never fill them back in. */
 	private final Set<Long> carved = new HashSet<>();
+	/** The tubes round this chunk of each line that has any. */
+	private final Map<TrackPlan, TubeShape> tubes = new HashMap<>();
+	/** The blocks cleared inside tubes, which hold water over them that must stay. */
+	private final Set<Long> tubeInside = new HashSet<>();
 	/** Every block placed in this chunk, checked at the end for what holds it up. */
 	private final Set<Long> placed = new HashSet<>();
 	private boolean lining;
@@ -335,6 +344,9 @@ public final class LineBuilder {
 	}
 
 	private void buildPass(int pass, int minX, int maxX, int minZ, int maxZ) {
+		if (pass < 2 && !lineOf.containsKey(plan)) {
+			buildTubes();
+		}
 		for (int i = 0; i < plan.length(); i++) {
 			int x = plan.x()[i];
 			int z = plan.z()[i];
@@ -358,6 +370,9 @@ public final class LineBuilder {
 	private void buildCrossSection(int i, Direction side) {
 		int track = plan.track()[i];
 		Section section = section(i);
+		if (section == Section.TUBE) {
+			return;
+		}
 		boolean framed = (section == Section.TUNNEL || section == Section.BRIDGE) && hasFrame(i);
 		Templated templated = templated(i);
 		for (int offset = -BuildState.REACH + 1; offset < BuildState.REACH; offset++) {
@@ -387,6 +402,76 @@ public final class LineBuilder {
 		}
 		if (templated != null && templated.own()) {
 			buildSlice(i, templated.slice());
+		}
+	}
+
+	/**
+	 * The current line's tubes in this chunk: in the clearing pass their inside, in the next their walls, the columns
+	 * under their ribs and the kelp and sea grass left standing in the water over them, cut off from the bed.
+	 */
+	private void buildTubes() {
+		TubeShape tube = tubes.computeIfAbsent(plan, line -> TubeShape.of(line, chunk));
+		if (tube == null) {
+			return;
+		}
+		for (int x = chunk.getMinBlockX(); x <= chunk.getMaxBlockX(); x++) {
+			for (int z = chunk.getMinBlockZ(); z <= chunk.getMaxBlockZ(); z++) {
+				if (!tube.covers(x, z)) {
+					continue;
+				}
+				int track = tube.track(x, z);
+				int top = track - 2;
+				for (int y = track - 2; y <= track + 6; y++) {
+					if (tube.inside(x, y, z)) {
+						if (!lining) {
+							clear(x, y, z);
+							tubeInside.add(BlockPos.asLong(x, y, z));
+						}
+						top = y;
+					} else if (tube.isWall(x, y, z)) {
+						if (lining && !carved.contains(BlockPos.asLong(x, y, z))) {
+							set(x, y, z, tube.isRibTop(x, y, z) ? SEA_LANTERN
+									: tube.isRib(x, z) || tube.isFloor(x, y, z) ? PRISMARINE : GLASS);
+						}
+						top = y;
+					}
+				}
+				if (lining) {
+					clearSeaPlants(x, top + 1, z);
+				}
+			}
+		}
+		if (lining) {
+			for (TubeShape.Rib rib : tube.ribs()) {
+				for (int[] column : TubeShape.columns(rib)) {
+					if (inChunk(column[0], column[1])) {
+						tubeColumn(column[0], rib.track() - 2, column[1]);
+					}
+				}
+			}
+		}
+	}
+
+	/** Turns the kelp and sea grass from a block up to water, where a tube cut them off from the sea bed. */
+	private void clearSeaPlants(int x, int fromY, int z) {
+		for (int y = fromY; y < level.getMaxY(); y++) {
+			BlockState state = level.getBlockState(pos.set(x, y, z));
+			if (!state.is(Blocks.KELP) && !state.is(Blocks.KELP_PLANT) && !state.is(Blocks.SEAGRASS)
+					&& !state.is(Blocks.TALL_SEAGRASS)) {
+				return;
+			}
+			set(x, y, z, WATER);
+		}
+	}
+
+	/** A column of prismarine bricks under a rib of a tube, down to the sea bed. */
+	private void tubeColumn(int x, int fromY, int z) {
+		for (int y = fromY; y > fromY - MAX_LEG; y--) {
+			BlockState state = level.getBlockState(pos.set(x, y, z));
+			if (state.isSolid() && state.getFluidState().isEmpty()) {
+				return;
+			}
+			set(x, y, z, PRISMARINE);
 		}
 	}
 
@@ -598,12 +683,18 @@ public final class LineBuilder {
 
 	/**
 	 * Whether block i of a line can be built from a template: in a planned tunnel, clear of corners by as far as the
-	 * cross section of a corner reaches (and the second rail's corners, two blocks off), and off ramps and the blocks
-	 * beside them, which keep the ramp's high tunnel and its stepped ceiling.
+	 * cross section of a corner reaches (and the second rail's corners, two blocks off), off ramps and the blocks
+	 * beside them, which keep the ramp's high tunnel and its stepped ceiling, and out of the end of a tube.
 	 */
 	private static boolean inTemplate(TrackPlan line, int i, boolean[] doubled) {
 		if (i < 1 || i > line.length() - 2 || line.sections()[i] != Section.TUNNEL) {
 			return false;
+		}
+		for (int j = Math.max(0, i - TubeShape.RADIUS - 1); j <= Math.min(line.length() - 1, i + TubeShape.RADIUS + 1);
+				j++) {
+			if (line.sections()[j] == Section.TUBE) {
+				return false;
+			}
 		}
 		int reach = doubled[i] ? DOUBLE_TRACK + 2 : 2;
 		for (int j = Math.max(0, i - reach); j <= Math.min(line.length() - 1, i + reach); j++) {
@@ -863,7 +954,7 @@ public final class LineBuilder {
 			set(x, track, z, Blocks.POWERED_RAIL.defaultBlockState()
 					.setValue(BlockStateProperties.RAIL_SHAPE_STRAIGHT, shape)
 					.setValue(BlockStateProperties.POWERED, true));
-			if (besideTorch && !isDeck(i) && !isOpenBridge(i)) {
+			if (besideTorch && !isDeck(i) && !isOpenBridge(i) && section(i) != Section.TUBE) {
 				// Each powered rail of a group on the ground has its own torch, so none waits on its neighbour's power.
 				placeHiddenTorch(x, track, z);
 			}
@@ -895,7 +986,7 @@ public final class LineBuilder {
 		if (pair != null) {
 			clearFarSide(i, pair, torch);
 		}
-		if (torch && (isDeck(i) || isOpenBridge(i))) {
+		if (torch && (isDeck(i) || isOpenBridge(i) || section == Section.TUBE)) {
 			placeTorch(x + lit.getStepX(), track, z + lit.getStepZ());
 		} else if (torch) {
 			placeHiddenTorch(x, track, z);
@@ -913,8 +1004,8 @@ public final class LineBuilder {
 				hangLantern(x + side.getStepX(), track, z + side.getStepZ());
 				hangLantern(x - side.getStepX(), track, z - side.getStepZ());
 			}
-		} else if (section != Section.BRIDGE && section != Section.TUNNEL && templated(i) == null
-				&& !isWesternStation() && isLampSpot(i, LAMP_SPACING / 2)) {
+		} else if (section != Section.BRIDGE && section != Section.TUNNEL && section != Section.TUBE
+				&& templated(i) == null && !isWesternStation() && isLampSpot(i, LAMP_SPACING / 2)) {
 			placePost(x + lit.getStepX(), track, z + lit.getStepZ(),
 					Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState());
 		}
@@ -1893,10 +1984,14 @@ public final class LineBuilder {
 
 	/**
 	 * After clearing: what stood on a removed block and cannot stay up on its own goes too (grass, flowers, snow,
-	 * fallen leaves), and a tree whose trunk lost its ground is removed whole.
+	 * fallen leaves), and a tree whose trunk lost its ground is removed whole. Over the inside of a tube the water
+	 * stays, and its kelp waits for the tube's roof.
 	 */
 	private void removeUnsupported() {
 		for (long key : carved) {
+			if (tubeInside.contains(key)) {
+				continue;
+			}
 			dropUnsupportedAbove(BlockPos.getX(key), BlockPos.getY(key), BlockPos.getZ(key));
 		}
 	}

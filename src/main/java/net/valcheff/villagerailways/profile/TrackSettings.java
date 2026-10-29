@@ -6,7 +6,9 @@ package net.valcheff.villagerailways.profile;
  *
  * @param cutDepth      deepest open cut before the line goes into a tunnel
  * @param pillarSpacing blocks between the pillars of a bridge in the open
+ * @param seaTubes      whether lines cross seas in tubes under water; without them a line bridges at most
+ *                      {@link HeightProfile#MAX_BRIDGE} blocks of ocean
  */
-public record TrackSettings(int cutDepth, int pillarSpacing) {
-	public static final TrackSettings DEFAULT = new TrackSettings(Section.MAX_TRENCH, 9);
+public record TrackSettings(int cutDepth, int pillarSpacing, boolean seaTubes) {
+	public static final TrackSettings DEFAULT = new TrackSettings(Section.MAX_TRENCH, 9, false);
 }

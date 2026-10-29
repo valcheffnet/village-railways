@@ -11,7 +11,12 @@ public enum Section {
 	/** Open cut, up to {@link #MAX_TRENCH} blocks deep unless the world sets another depth. */
 	TRENCH,
 	/** 3x3 tunnel where the cut would be deeper. */
-	TUNNEL;
+	TUNNEL,
+	/**
+	 * A glass tube under water, where a line crosses a sea: level on columns over the sea bed, and on through the
+	 * islands and shores while the rail is below the water's surface.
+	 */
+	TUBE;
 
 	public static final int MAX_FILL = 3;
 	public static final int MAX_TRENCH = 5;
@@ -27,7 +32,7 @@ public enum Section {
 	 */
 	public static Section of(int track, int ground, int water, int maxTrench) {
 		if (water != HeightProfile.DRY) {
-			return BRIDGE;
+			return track > water ? BRIDGE : TUBE;
 		}
 		if (track == ground) {
 			return FLAT;

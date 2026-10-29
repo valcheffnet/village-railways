@@ -10,8 +10,9 @@ import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 
 /**
- * Turns down lines that would cross open ocean. A narrow strait of at most {@code maxCrossing} blocks passes and gets
- * a bridge, like rivers and lakes. The biome is read from the generator's noise at sea level every {@value #STEP}
+ * Turns down lines that would cross open ocean, in a world without sea tubes. A narrow strait of at most
+ * {@code maxCrossing} blocks passes and gets a bridge, like rivers and lakes. It also tells ocean from land for the
+ * network map. The biome is read from the generator's noise at sea level every {@value #STEP}
  * blocks along the path (the biome grid is 4 blocks), so no chunk has to exist.
  */
 public class OceanFilter implements NetworkPlanner.PathFilter {

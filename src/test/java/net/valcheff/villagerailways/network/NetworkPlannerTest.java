@@ -213,6 +213,24 @@ class NetworkPlannerTest {
 	}
 
 	@Test
+	void retryingAllPlansWhatAClosedAreaTurnedDown() {
+		List<Village> villages = scatter(new Random(7), 80, 8000);
+		NetworkPlanner open = new NetworkPlanner(SETTINGS);
+		exploreAll(open, villages, ACCEPT_ALL);
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		// Old land in the west half, where nothing may be built.
+		exploreAll(planner, villages, path -> path.stream().allMatch(point -> point.x() >= 4000));
+		int before = planner.links().size();
+		List<Link> added = planner.retryAll(ACCEPT_ALL);
+		assertTrue(planner.links().size() > before + 10, before + " lines before, " + planner.links().size() + " after");
+		assertTrue(added.stream().anyMatch(link -> link.path().stream().anyMatch(point -> point.x() < 4000)));
+		assertTrue(planner.links().size() >= open.links().size() * 3 / 4,
+				planner.links().size() + " lines, " + open.links().size() + " in land open from the start");
+		assertTrue(planner.retryAll(ACCEPT_ALL).isEmpty(), "a second try found more");
+		assertNetworkRules(planner);
+	}
+
+	@Test
 	void lineStepsAroundAnObstacle() {
 		// A structure sits where the plain staircase would put a corner; the filter stands in for the world check.
 		NetworkPlanner.PathFilter obstacle = path -> {

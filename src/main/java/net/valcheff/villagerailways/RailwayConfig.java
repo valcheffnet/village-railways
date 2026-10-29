@@ -28,7 +28,8 @@ public final class RailwayConfig {
 		MIN_RUN("minRun", 16, 64, PlannerSettings.DEFAULT.minRun()),
 		MAX_RUN("maxRun", 32, 128, PlannerSettings.DEFAULT.maxRun()),
 		CUT_DEPTH("cutDepth", 2, 7, TrackSettings.DEFAULT.cutDepth()),
-		PILLAR_SPACING("pillarSpacing", 4, 16, TrackSettings.DEFAULT.pillarSpacing());
+		PILLAR_SPACING("pillarSpacing", 4, 16, TrackSettings.DEFAULT.pillarSpacing()),
+		SEA_TUBES("seaTubes", 0, 1, TrackSettings.DEFAULT.seaTubes() ? 1 : 0);
 
 		public final String key;
 		public final int min;
@@ -44,9 +45,12 @@ public final class RailwayConfig {
 
 		/** Whether a world keeps this value from its first start. */
 		public boolean keptByWorld() {
-			return this == CUT_DEPTH || this == PILLAR_SPACING;
+			return this == CUT_DEPTH || this == PILLAR_SPACING || this == SEA_TUBES;
 		}
 	}
+
+	/** Whether the world about to be created in this game crosses seas in tubes, as chosen when creating it, or null. */
+	private static volatile Boolean newWorldSeaTubes;
 
 	private final int[] values;
 
@@ -108,13 +112,21 @@ public final class RailwayConfig {
 		PlannerSettings defaults = PlannerSettings.DEFAULT;
 		return new PlannerSettings(get(Setting.MAX_LINKS), get(Setting.MAX_LENGTH), get(Setting.MIN_RUN),
 				get(Setting.MAX_RUN), defaults.clearance(), defaults.stationMargin(), defaults.stationSpacing(),
-				defaults.villageMargin(), defaults.structureMargin(), defaults.minAngle(), defaults.maxOceanCrossing(),
-				defaults.maxGroupLinks(), defaults.maxGroupLength());
+				defaults.villageMargin(), defaults.structureMargin(), defaults.minAngle(), defaults.maxGroupLinks(),
+				defaults.maxGroupLength());
+	}
+
+	/**
+	 * Sets whether the world about to be created in this game crosses seas in tubes, over the config's value: the next
+	 * world to start that keeps no build values yet keeps this.
+	 */
+	public static void chooseNewWorldSeaTubes(boolean seaTubes) {
+		newWorldSeaTubes = seaTubes;
 	}
 
 	/** The build values for new worlds. */
 	public TrackSettings track() {
-		return new TrackSettings(get(Setting.CUT_DEPTH), get(Setting.PILLAR_SPACING));
+		return new TrackSettings(get(Setting.CUT_DEPTH), get(Setting.PILLAR_SPACING), get(Setting.SEA_TUBES) == 1);
 	}
 
 	/**
@@ -127,7 +139,7 @@ public final class RailwayConfig {
 		if (Files.exists(file)) {
 			kept = keptBy(folder);
 		} else {
-			kept = Files.exists(folder.resolve("network.json")) ? TrackSettings.DEFAULT : track();
+			kept = Files.exists(folder.resolve("network.json")) ? TrackSettings.DEFAULT : newWorldTrack();
 			Files.createDirectories(folder);
 			try (Writer writer = Files.newBufferedWriter(file)) {
 				writer.write("# The build values this world was first started with. Village Railways keeps them, so\n");
@@ -136,16 +148,29 @@ public final class RailwayConfig {
 			}
 		}
 		if (!kept.equals(track())) {
-			VillageRailways.LOGGER.info("This world keeps cutDepth={} and pillarSpacing={} from its first start; "
-					+ "the values in the config apply to new worlds", kept.cutDepth(), kept.pillarSpacing());
+			VillageRailways.LOGGER.info("This world keeps cutDepth={}, pillarSpacing={} and seaTubes={} from its "
+					+ "first start; the values in the config apply to new worlds", kept.cutDepth(), kept.pillarSpacing(),
+					kept.seaTubes() ? 1 : 0);
 		}
 		return kept;
 	}
 
-	/** The build values a world saved in {@code folder} keeps, or the defaults for one that keeps none yet. */
+	/** The build values of a world starting for the first time: the config's, with the sea tubes chosen for it. */
+	private TrackSettings newWorldTrack() {
+		TrackSettings track = track();
+		Boolean chosen = newWorldSeaTubes;
+		newWorldSeaTubes = null;
+		return chosen == null ? track : new TrackSettings(track.cutDepth(), track.pillarSpacing(), chosen);
+	}
+
+	/**
+	 * The build values a world saved in {@code folder} keeps, or the defaults for one that keeps none yet. One that
+	 * kept its values before sea tubes came has none, as the default.
+	 */
 	public static TrackSettings keptBy(Path folder) {
 		Properties props = read(folder.resolve(TRACK_FILE));
-		return new TrackSettings(readInt(props, Setting.CUT_DEPTH), readInt(props, Setting.PILLAR_SPACING));
+		return new TrackSettings(readInt(props, Setting.CUT_DEPTH), readInt(props, Setting.PILLAR_SPACING),
+				readInt(props, Setting.SEA_TUBES) == 1);
 	}
 
 	/** Writes the config file in {@code configDir} with every key and its explanation. */
@@ -187,6 +212,8 @@ public final class RailwayConfig {
 		writer.write("cutDepth=" + settings.cutDepth() + "\n");
 		writer.write("# Blocks between the pillars of a bridge in the open (4-16).\n");
 		writer.write("pillarSpacing=" + settings.pillarSpacing() + "\n");
+		writer.write("# Whether lines cross seas in glass tubes under water (1) or keep off open sea (0).\n");
+		writer.write("seaTubes=" + (settings.seaTubes() ? 1 : 0) + "\n");
 	}
 
 	private static Properties read(Path file) {

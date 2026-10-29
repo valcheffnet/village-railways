@@ -10,11 +10,14 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.MultiLineTextWidget;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
 import net.minecraft.client.gui.layouts.LinearLayout;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -35,9 +38,13 @@ public class RailwayConfigScreen extends Screen {
 	private HeaderAndFooterLayout layout;
 	/** The settings in {@link Setting} order, null until the server answers. */
 	private List<Integer> values;
-	/** The cut depth and pillar spacing the current world keeps, null outside a world. */
+	/** The settings as saved, to tell whether Done has changes to save. */
+	private List<Integer> stored;
+	/** The cut depth, pillar spacing and sea tubes (1 or 0) the current world keeps, null outside a world. */
 	private List<Integer> world;
 	private boolean canEdit;
+	/** Whether the server's world opens its existing land to lines at its next start. */
+	private boolean openLand;
 	private boolean saving;
 	private Component status;
 
@@ -51,6 +58,7 @@ public class RailwayConfigScreen extends Screen {
 			ClientPlayNetworking.send(new ConfigSync.Request());
 		} else {
 			values = new ArrayList<>(RailwayConfig.load(configDir()).values());
+			stored = List.copyOf(values);
 			canEdit = true;
 			status = Component.literal(connected
 					? "This server does not run Village Railways. These are the settings of the worlds this game hosts."
@@ -61,7 +69,9 @@ public class RailwayConfigScreen extends Screen {
 	/** The server's settings, as it sent them when asked or after a save. */
 	void show(ConfigSync.State state) {
 		values = new ArrayList<>(state.values());
+		stored = List.copyOf(values);
 		world = state.world();
+		openLand = state.openLand();
 		canEdit = state.canEdit();
 		status = Component.literal(saving ? "Saved. The server uses them from its next start."
 				: canEdit ? "The settings of this server. They apply from its next start."
@@ -80,21 +90,40 @@ public class RailwayConfigScreen extends Screen {
 			for (Setting setting : Setting.values()) {
 				if (setting == Setting.CUT_DEPTH) {
 					contents.addChild(text(world == null ? "For new worlds:"
-							: "For new worlds. This one keeps a cut depth of " + world.get(0) + " and pillars every "
-									+ world.get(1) + " blocks:"));
+							: "For new worlds. This one keeps a cut depth of " + world.get(0) + ", pillars every "
+									+ world.get(1) + " blocks and sea tubes " + (world.get(2) == 1 ? "on" : "off")
+									+ ":"));
 				}
 				int index = setting.ordinal();
-				IntSlider slider = contents.addChild(new IntSlider(setting.min, setting.max, step(setting),
-						values.get(index), value -> label(setting, value), value -> values.set(index, value)));
-				slider.setTooltip(Tooltip.create(Component.literal(explanation(setting))));
-				slider.active = canEdit;
+				Tooltip tooltip = Tooltip.create(Component.literal(explanation(setting)));
+				AbstractWidget widget;
+				if (setting == Setting.SEA_TUBES) {
+					// A cycle button sets its tooltip again on every click, from the one given to its builder.
+					widget = contents.addChild(CycleButton.onOffBuilder(values.get(index) == 1).withTooltip(on -> tooltip)
+							.create(0, 0, WIDTH, 20, label(setting, 1), (button, on) -> values.set(index, on ? 1 : 0)));
+				} else {
+					widget = contents.addChild(new IntSlider(setting.min, setting.max, step(setting), values.get(index),
+							value -> label(setting, value), value -> values.set(index, value)));
+					widget.setTooltip(tooltip);
+				}
+				widget.active = canEdit;
 			}
+		}
+		if (onServer && values != null) {
+			Button land = contents.addChild(Button.builder(Component.literal(openLand
+					? "Existing land opens at the next start: call off" : "Open the existing land to lines..."),
+					button -> openLand()).width(WIDTH).build());
+			land.setTooltip(Tooltip.create(Component.literal("At the next start of the server, lines are planned "
+					+ "through the land that exists now as well, which they keep out of otherwise, and built there as "
+					+ "it loads.")));
+			land.active = canEdit;
 		}
 		contents.addChild(text(status.getString()));
 
 		LinearLayout footer = layout.addToFooter(LinearLayout.horizontal().spacing(8));
-		Button save = footer.addChild(Button.builder(Component.literal("Save"), button -> save()).width(150).build());
-		save.active = canEdit && values != null;
+		Button apply = footer.addChild(Button.builder(Component.literal("Apply"), button -> save()).width(150)
+				.build());
+		apply.active = canEdit && values != null;
 		footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(150).build());
 		layout.visitWidgets(this::addRenderableWidget);
 		repositionElements();
@@ -108,9 +137,28 @@ public class RailwayConfigScreen extends Screen {
 		} else {
 			RailwayConfig.of(values).save(configDir());
 			values = new ArrayList<>(RailwayConfig.load(configDir()).values());
+			stored = List.copyOf(values);
 			status = Component.literal("Saved. They apply the next time a world starts.");
 		}
 		rebuildWidgets();
+	}
+
+	/** Asks for the existing land to open after a warning, or calls that off. */
+	private void openLand() {
+		if (openLand) {
+			ClientPlayNetworking.send(new ConfigSync.OpenLand(false));
+			return;
+		}
+		minecraft.gui.setScreen(new ConfirmScreen(yes -> {
+			if (yes) {
+				ClientPlayNetworking.send(new ConfigSync.OpenLand(true));
+			}
+			minecraft.gui.setScreen(this);
+		}, Component.literal("Open the existing land to lines?"), Component.literal("At the next start of the server, "
+				+ "railway lines are planned through the land that exists now, where players have built. They can cut "
+				+ "through houses, farms and redstone, and are built there as the land loads. A start that has done "
+				+ "this cannot be undone, so make a backup of the world first."),
+				Component.literal("Open at the next start"), CommonComponents.GUI_CANCEL));
 	}
 
 	@Override
@@ -118,8 +166,12 @@ public class RailwayConfigScreen extends Screen {
 		layout.arrangeElements();
 	}
 
+	/** Saves what was changed and not saved yet, then goes back. */
 	@Override
 	public void onClose() {
+		if (canEdit && values != null && !values.equals(stored)) {
+			save();
+		}
 		minecraft.gui.setScreen(parent);
 	}
 
@@ -147,6 +199,7 @@ public class RailwayConfigScreen extends Screen {
 			case MAX_RUN -> "Longest side step of a slanted line: " + value + " blocks";
 			case CUT_DEPTH -> "Deepest open cut: " + value + " blocks";
 			case PILLAR_SPACING -> "Bridge pillars every " + value + " blocks";
+			case SEA_TUBES -> "Glass tubes under the sea";
 		});
 	}
 
@@ -159,6 +212,8 @@ public class RailwayConfigScreen extends Screen {
 					+ "least as long as the straight.";
 			case CUT_DEPTH -> "Where the ground is higher than this over the rail, the line goes into a tunnel.";
 			case PILLAR_SPACING -> "Blocks between the pillars of a bridge in the open.";
+			case SEA_TUBES -> "Lines cross seas in glass tubes under water. Off, they keep off open sea and bridge "
+					+ "only narrow straits.";
 		};
 	}
 

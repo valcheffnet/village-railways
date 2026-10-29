@@ -27,7 +27,8 @@ public final class ProfileMap {
 			Section.FILL, new Color(0x8D6E63),
 			Section.BRIDGE, new Color(0x1E88E5),
 			Section.TRENCH, new Color(0xF28C28),
-			Section.TUNNEL, new Color(0x8E24AA));
+			Section.TUNNEL, new Color(0x8E24AA),
+			Section.TUBE, new Color(0x26A69A));
 
 	private ProfileMap() {
 	}

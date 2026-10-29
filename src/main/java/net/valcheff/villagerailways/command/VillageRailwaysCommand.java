@@ -90,6 +90,10 @@ public final class VillageRailwaysCommand {
 	public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
 		dispatcher.register(literal("villagerailways")
 				.requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+				.then(literal("openland")
+						.executes(context -> openLand(context, true))
+						.then(literal("cancel")
+								.executes(context -> openLand(context, false))))
 				.then(literal("villages")
 						.executes(context -> listVillages(context, DEFAULT_RADIUS))
 						.then(argument("radius", IntegerArgumentType.integer(16, 20000))
@@ -142,6 +146,21 @@ public final class VillageRailwaysCommand {
 										.executes(context -> giveMapWall(context,
 												IntegerArgumentType.getInteger(context, "maps"),
 												IntegerArgumentType.getInteger(context, "radius")))))));
+	}
+
+	private static int openLand(CommandContext<CommandSourceStack> context, boolean open) {
+		CommandSourceStack source = context.getSource();
+		try {
+			RailwayService.requestOpenLand(VillageRailways.network().folder(), open);
+		} catch (IOException e) {
+			source.sendFailure(Component.literal("Could not write the request: " + e.getMessage()));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal(open
+				? "At the next start the land that exists now opens to railway lines. Lines may then run through "
+						+ "player builds. Undo with /villagerailways openland cancel before the restart."
+				: "The land stays closed to railway lines at the next start."), true);
+		return 1;
 	}
 
 	private static int giveMapWall(CommandContext<CommandSourceStack> context, int count, int radius)
@@ -405,10 +424,19 @@ public final class VillageRailwaysCommand {
 					+ (secondMissing == 0 ? "all in place" : secondMissing + " missing, first at " + firstSecondMissing));
 		}
 		List<String> tunnels = new ArrayList<>();
+		List<String> tubes = new ArrayList<>();
 		List<String> decks = new ArrayList<>();
 		int tunnelStart = -1;
+		int tubeStart = -1;
 		int deckStart = -1;
 		for (int i = 0; i <= plan.length(); i++) {
+			boolean tube = i < plan.length() && plan.sections()[i] == Section.TUBE;
+			if (tube && tubeStart < 0) {
+				tubeStart = i;
+			} else if (!tube && tubeStart >= 0) {
+				tubes.add((i - tubeStart) + " from " + at(plan, tubeStart) + " to " + at(plan, i - 1));
+				tubeStart = -1;
+			}
 			boolean tunnel = i < plan.length() && plan.sections()[i] == Section.TUNNEL;
 			if (tunnel && tunnelStart < 0) {
 				tunnelStart = i;
@@ -429,6 +457,7 @@ public final class VillageRailwaysCommand {
 			}
 		}
 		report.add("  Tunnels of 50 or more: " + (tunnels.isEmpty() ? "none" : String.join("; ", tunnels)));
+		report.add("  Tubes: " + (tubes.isEmpty() ? "none" : String.join("; ", tubes)));
 		report.add("  Cave bridges: " + (decks.isEmpty() ? "none" : String.join("; ", decks)));
 		report.add("  Halts: " + (plan.halts().length == 0 ? "none" : Arrays.stream(plan.halts())
 				.mapToObj(i -> at(plan, i)).collect(Collectors.joining("; "))));

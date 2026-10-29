@@ -1,5 +1,6 @@
 package net.valcheff.villagerailways;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -16,6 +17,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
+import net.valcheff.villagerailways.build.RailwayService;
 import net.valcheff.villagerailways.profile.TrackSettings;
 
 /**
@@ -43,14 +45,17 @@ public final class ConfigSync {
 	}
 
 	/**
-	 * The server's settings in {@link RailwayConfig.Setting} order, the cut depth and pillar spacing its world keeps,
-	 * and whether the player may change the settings.
+	 * The server's settings in {@link RailwayConfig.Setting} order, the cut depth, pillar spacing and sea tubes (1 or
+	 * 0) its world keeps, whether its existing land opens to lines at the next start, and whether the player may
+	 * change the settings.
 	 */
-	public record State(List<Integer> values, List<Integer> world, boolean canEdit) implements CustomPacketPayload {
+	public record State(List<Integer> values, List<Integer> world, boolean openLand, boolean canEdit)
+			implements CustomPacketPayload {
 		public static final Type<State> TYPE = new Type<>(Identifier.fromNamespaceAndPath(VillageRailways.MOD_ID,
 				"config_state"));
 		public static final StreamCodec<RegistryFriendlyByteBuf, State> CODEC = StreamCodec.composite(INTS,
-				State::values, INTS, State::world, ByteBufCodecs.BOOL, State::canEdit, State::new);
+				State::values, INTS, State::world, ByteBufCodecs.BOOL, State::openLand, ByteBufCodecs.BOOL,
+				State::canEdit, State::new);
 
 		@Override
 		public Type<State> type() {
@@ -71,9 +76,23 @@ public final class ConfigSync {
 		}
 	}
 
+	/** The config screen asks for the world's existing land to open to lines at the next start, or takes that back. */
+	public record OpenLand(boolean open) implements CustomPacketPayload {
+		public static final Type<OpenLand> TYPE = new Type<>(Identifier.fromNamespaceAndPath(VillageRailways.MOD_ID,
+				"open_land"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, OpenLand> CODEC = StreamCodec.composite(
+				ByteBufCodecs.BOOL, OpenLand::open, OpenLand::new);
+
+		@Override
+		public Type<OpenLand> type() {
+			return TYPE;
+		}
+	}
+
 	static void register() {
 		PayloadTypeRegistry.serverboundPlay().register(Request.TYPE, Request.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(Save.TYPE, Save.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(OpenLand.TYPE, OpenLand.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(State.TYPE, State.CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(Request.TYPE,
 				(payload, context) -> context.responseSender().sendPacket(state(context.server(), context.player())));
@@ -85,13 +104,30 @@ public final class ConfigSync {
 			}
 			context.responseSender().sendPacket(state(context.server(), context.player()));
 		});
+		ServerPlayNetworking.registerGlobalReceiver(OpenLand.TYPE, (payload, context) -> {
+			if (canEdit(context.server(), context.player())) {
+				try {
+					RailwayService.requestOpenLand(folder(context.server()), payload.open());
+					VillageRailways.LOGGER.info("{} {} opening the existing land to railway lines at the next start",
+							context.player().getName().getString(), payload.open() ? "asked for" : "called off");
+				} catch (IOException e) {
+					VillageRailways.LOGGER.warn("Could not ask for the existing land to open to lines", e);
+				}
+			}
+			context.responseSender().sendPacket(state(context.server(), context.player()));
+		});
+	}
+
+	private static Path folder(MinecraftServer server) {
+		return server.getWorldPath(LevelResource.ROOT).resolve("village_railways");
 	}
 
 	private static State state(MinecraftServer server, ServerPlayer player) {
 		RailwayConfig config = RailwayConfig.load(FabricLoader.getInstance().getConfigDir());
-		Path folder = server.getWorldPath(LevelResource.ROOT).resolve("village_railways");
+		Path folder = folder(server);
 		TrackSettings kept = RailwayConfig.keptBy(folder);
-		return new State(config.values(), List.of(kept.cutDepth(), kept.pillarSpacing()), canEdit(server, player));
+		return new State(config.values(), List.of(kept.cutDepth(), kept.pillarSpacing(), kept.seaTubes() ? 1 : 0),
+				RailwayService.isOpenLandRequested(folder), canEdit(server, player));
 	}
 
 	private static boolean canEdit(MinecraftServer server, ServerPlayer player) {

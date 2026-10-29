@@ -181,6 +181,69 @@ class HeightProfileTest {
 		}
 	}
 
+	@Test
+	void seaIsCrossedInALevelTubeOverItsHighestDeepBed() {
+		int[] ground = filled(600, 66);
+		int[] water = dry(600);
+		Arrays.fill(water, 100, 500, 64);
+		Arrays.fill(ground, 100, 500, 45);
+		Arrays.fill(ground, 200, 400, 30);
+		// Shallows by the shores, too shallow to set the height.
+		Arrays.fill(ground, 100, 115, 60);
+		Arrays.fill(ground, 485, 500, 61);
+		int[] tube = HeightProfile.tubeLevels(ground, water);
+		for (int i = 0; i < 600; i++) {
+			assertEquals(i >= 100 && i < 500 ? 48 : HeightProfile.DRY, tube[i], "at " + i);
+		}
+		int[] track = HeightProfile.plan(ground, water, tube, new boolean[600], 66, 66, 1, Section.MAX_TRENCH);
+		// The ramps down to it may end a block or two out in the water.
+		for (int i = 100; i < 500; i++) {
+			assertTrue(track[i] >= 48 && (i < 110 || i >= 490 || track[i] == 48), "at " + i + ": " + track[i]);
+		}
+		assertEquals(Section.TUBE, Section.of(track[300], ground[300], water[300]));
+		assertEquals(Section.TUBE, Section.of(track[105], ground[105], water[105]));
+	}
+
+	@Test
+	void tubeGoesDownInTheWaterFromAStationOnIt() {
+		int[] ground = filled(400, 66);
+		int[] water = dry(400);
+		Arrays.fill(water, 100, 400, 64);
+		Arrays.fill(ground, 100, 400, 40);
+		int[] tube = HeightProfile.tubeLevels(ground, water);
+		int[] track = HeightProfile.plan(ground, water, tube, new boolean[400], 66, 65, 1, Section.MAX_TRENCH);
+		assertEquals(65, track[399]);
+		assertEquals(43, track[200]);
+		for (int i = 110; i < 400 - HeightProfile.STATION_FLAT - 30; i++) {
+			assertEquals(43, track[i], "at " + i);
+		}
+	}
+
+	@Test
+	void tubeRunsOnThroughASmallIsland() {
+		int[] ground = filled(400, 66);
+		int[] water = dry(400);
+		Arrays.fill(water, 100, 300, 64);
+		Arrays.fill(ground, 100, 300, 40);
+		Arrays.fill(water, 190, 200, HeightProfile.DRY);
+		Arrays.fill(ground, 190, 200, 66);
+		int[] tube = HeightProfile.tubeLevels(ground, water);
+		for (int i = 100; i < 300; i++) {
+			assertEquals(43, tube[i], "at " + i);
+		}
+	}
+
+	@Test
+	void shortOrShallowWaterHasNoTube() {
+		int[] ground = filled(400, 66);
+		int[] water = dry(400);
+		Arrays.fill(water, 50, 50 + HeightProfile.MAX_BRIDGE, 64);
+		Arrays.fill(ground, 50, 50 + HeightProfile.MAX_BRIDGE, 30);
+		Arrays.fill(water, 200, 380, 64);
+		Arrays.fill(ground, 200, 380, 58);
+		assertTrue(Arrays.stream(HeightProfile.tubeLevels(ground, water)).allMatch(y -> y == HeightProfile.DRY));
+	}
+
 	private static int[] filled(int length, int value) {
 		int[] array = new int[length];
 		Arrays.fill(array, value);

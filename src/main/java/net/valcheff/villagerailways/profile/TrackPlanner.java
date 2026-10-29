@@ -34,6 +34,10 @@ public class TrackPlanner {
 	public static final int MAX_BRIDGE_GAP = 16;
 	/** How far before and after a double bridge its second rail may branch off and join, on level ground. */
 	private static final int BRIDGE_APPROACH = 8;
+	/** The same for a tube, whose shores go down to it on ramps. */
+	private static final int TUBE_APPROACH = 32;
+	/** Longest stretch of a shore a tube runs on through while the rail is below the water's surface. */
+	private static final int MAX_SHORE_TUBE = 64;
 	/**
 	 * Most ground between a double bridge and a station with a second track for it: the second rail runs on into the
 	 * station instead of joining the line for those few blocks.
@@ -63,10 +67,12 @@ public class TrackPlanner {
 
 	private final TerrainSampler terrain;
 	private final int cutDepth;
+	private final boolean seaTubes;
 
 	public TrackPlanner(ServerLevel level, TrackSettings settings) {
 		this.terrain = new TerrainSampler(level);
 		this.cutDepth = settings.cutDepth();
+		this.seaTubes = settings.seaTubes();
 	}
 
 	/**
@@ -87,12 +93,23 @@ public class TrackPlanner {
 	public TrackPlan plan(List<Point> path, int startHeight, int endHeight, Area trunk, boolean openStart,
 			boolean openEnd, Area clear) {
 		Layout layout = layout(path);
-		int[] track = HeightProfile.plan(layout.ground(), layout.water(), layout.corner(), startHeight, endHeight,
-				trunk == null ? 1 : DOUBLE_CORNER_CLEARANCE, cutDepth);
+		int cornerClearance = trunk == null ? 1 : DOUBLE_CORNER_CLEARANCE;
+		int[] tubes = HeightProfile.tubeLevels(layout.ground(), layout.water());
+		if (!seaTubes) {
+			Arrays.fill(tubes, HeightProfile.DRY);
+		}
+		int[] track = HeightProfile.plan(layout.ground(), layout.water(), tubes, layout.corner(), startHeight,
+				endHeight, cornerClearance, cutDepth);
+		if (track == null) {
+			// No room to go down to a tube between a station and the shore: the water is bridged.
+			Arrays.fill(tubes, HeightProfile.DRY);
+			track = HeightProfile.plan(layout.ground(), layout.water(), layout.corner(), startHeight, endHeight,
+					cornerClearance, cutDepth);
+		}
 		if (track == null) {
 			return null;
 		}
-		TrackPlan line = openTunnels(plan(layout, track));
+		TrackPlan line = openTunnels(tubeShores(plan(layout, track), tubes));
 		boolean[] bridged = bridgeDoubles(line, clear, openStart, openEnd);
 		boolean[] doubled = bridged.clone();
 		for (int i = 0; trunk != null && i < line.length(); i++) {
@@ -102,18 +119,62 @@ public class TrackPlanner {
 	}
 
 	/**
-	 * Where a line runs double over its bridges: every bridge of at least {@value #MIN_DOUBLE_BRIDGE} blocks, with
-	 * {@value #BRIDGE_APPROACH} blocks either side where the rails may branch off and join on level ground. Two bridges
-	 * with up to {@value #MAX_BRIDGE_GAP} blocks of ground between them make one, so the double track does not join and
-	 * branch off again; one that ends within {@value #STATION_REACH} blocks of an open end runs on to it. Blocks
-	 * {@code clear} refuses, beside another track, stay single.
+	 * Marks the land a line's tubes run through: the islands in a sea while the rail is below its surface, and the
+	 * shores on from a tube the same way, up to {@value #MAX_SHORE_TUBE} blocks. A cut or a short tunnel there would let
+	 * the sea in.
+	 */
+	private static TrackPlan tubeShores(TrackPlan line, int[] tubes) {
+		for (int i = 0; i < line.length(); i++) {
+			if (tubes[i] == HeightProfile.DRY) {
+				continue;
+			}
+			int last = i;
+			int surface = line.water()[i];
+			while (last + 1 < line.length() && tubes[last + 1] != HeightProfile.DRY) {
+				last++;
+				surface = Math.max(surface, line.water()[last]);
+			}
+			for (int j = i; j <= last; j++) {
+				if (line.water()[j] == HeightProfile.DRY && line.track()[j] < surface) {
+					line.sections()[j] = Section.TUBE;
+				}
+			}
+			if (line.sections()[i] == Section.TUBE) {
+				tubeShore(line, i, -1, surface);
+			}
+			if (line.sections()[last] == Section.TUBE) {
+				tubeShore(line, last, 1, surface);
+			}
+			i = last;
+		}
+		return line;
+	}
+
+	private static void tubeShore(TrackPlan line, int end, int step, int surface) {
+		for (int n = 1; n <= MAX_SHORE_TUBE; n++) {
+			int i = end + step * n;
+			if (i < 0 || i >= line.length() || line.water()[i] != HeightProfile.DRY || line.track()[i] >= surface) {
+				return;
+			}
+			line.sections()[i] = Section.TUBE;
+		}
+	}
+
+	/**
+	 * Where a line runs double over its bridges and through its tubes: every bridge of at least
+	 * {@value #MIN_DOUBLE_BRIDGE} blocks, with {@value #BRIDGE_APPROACH} blocks either side ({@value #TUBE_APPROACH}
+	 * for a tube) where the rails may branch off and join on level ground. Two bridges with up to
+	 * {@value #MAX_BRIDGE_GAP} blocks of ground between them make one, so the double track does not join and branch off
+	 * again; one that ends within {@value #STATION_REACH} blocks of an open end runs on to it. Blocks {@code clear}
+	 * refuses, beside another track, stay single.
 	 */
 	private static boolean[] bridgeDoubles(TrackPlan line, Area clear, boolean openStart, boolean openEnd) {
 		int length = line.length();
 		List<int[]> runs = new ArrayList<>();
 		int start = -1;
 		for (int i = 0; i <= length; i++) {
-			boolean bridge = i < length && line.sections()[i] == Section.BRIDGE;
+			Section section = i < length ? line.sections()[i] : null;
+			boolean bridge = section == Section.BRIDGE || section == Section.TUBE;
 			if (bridge && start < 0) {
 				start = i;
 			} else if (!bridge && start >= 0) {
@@ -132,9 +193,14 @@ public class TrackPlanner {
 			if (run[1] - run[0] + 1 < MIN_DOUBLE_BRIDGE) {
 				continue;
 			}
-			int from = openStart && run[0] <= STATION_REACH ? 0 : Math.max(0, run[0] - BRIDGE_APPROACH);
+			boolean tube = false;
+			for (int i = run[0]; i <= run[1]; i++) {
+				tube |= line.sections()[i] == Section.TUBE;
+			}
+			int approach = tube ? TUBE_APPROACH : BRIDGE_APPROACH;
+			int from = openStart && run[0] <= STATION_REACH ? 0 : Math.max(0, run[0] - approach);
 			int to = openEnd && length - 1 - run[1] <= STATION_REACH ? length - 1
-					: Math.min(length - 1, run[1] + BRIDGE_APPROACH);
+					: Math.min(length - 1, run[1] + approach);
 			for (int i = from; i <= to; i++) {
 				doubled[i] = clear.contains(line.x()[i], line.z()[i]);
 			}

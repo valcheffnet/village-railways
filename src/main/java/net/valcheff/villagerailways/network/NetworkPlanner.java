@@ -21,8 +21,8 @@ import java.util.function.LongConsumer;
  * <p>Villages arrive in batches as the world is explored. Each batch is joined to the network greedily, shortest
  * line first, so a village links to its nearest neighbours and, when those already have their lines, to farther
  * ones within the maximum length. A line is only added when both villages have a free slot at their station, its
- * stepped path keeps clear of every other line and out of every village, and the path filter accepts it (no open
- * ocean, for example). Lines are never removed, so the network only grows. The result is planar: no two lines ever
+ * stepped path keeps clear of every other line and out of every village, and the path filter accepts it (none
+ * through a temple, for example). Lines are never removed, so the network only grows. The result is planar: no two lines ever
  * cross.
  *
  * <p>Nearest-neighbour lines leave groups of villages apart where the gaps are wider than the maximum length. After
@@ -256,6 +256,32 @@ public class NetworkPlanner {
 			}
 		}
 		List<VillagePair> ordered = new ArrayList<>(pairs);
+		return planPairs(pairs, filter);
+	}
+
+	/**
+	 * Tries every pair of known villages again, the trunk lines between their groups too, as if all of them had just
+	 * been found: for when the reasons they were turned down may no longer hold, such as land opened to lines.
+	 *
+	 * @return the new lines and the stations they need, in the order they were planned
+	 */
+	public synchronized List<Link> retryAll(PathFilter filter) {
+		long maxLengthSq = (long) settings.maxLength() * settings.maxLength();
+		Set<VillagePair> pairs = new HashSet<>(deferred);
+		for (Village a : villages.values()) {
+			for (Village b : villagesNear(a.center(), settings.maxLength())) {
+				if (a.id() != b.id() && a.center().distanceSq(b.center()) <= maxLengthSq && !linked(a.id(), b.id())) {
+					pairs.add(VillagePair.of(a.id(), b.id()));
+				}
+			}
+		}
+		failedTrunks.clear();
+		return planPairs(pairs, filter);
+	}
+
+	/** Plans the lines it can of the given village pairs, shortest first, then the trunk lines between groups. */
+	private List<Link> planPairs(Set<VillagePair> pairs, PathFilter filter) {
+		List<VillagePair> ordered = new ArrayList<>(pairs);
 		ordered.sort(Comparator.comparingLong(this::lengthSq)
 				.thenComparingLong(VillagePair::first)
 				.thenComparingLong(VillagePair::second));
@@ -416,12 +442,12 @@ public class NetworkPlanner {
 		}
 	}
 
-	/** How many possible lines the last {@link #addVillages} call turned down, by reason. */
 	/** Tells the planner which lines and stations planned before are not built at all yet, so they may change. */
 	public synchronized void setUnbuilt(Predicate<Link> unbuilt) {
 		this.unbuilt = unbuilt;
 	}
 
+	/** How many possible lines the last {@link #addVillages} call turned down, by reason. */
 	public synchronized Map<Rejection, Integer> lastRejections() {
 		return Map.copyOf(lastRejections);
 	}

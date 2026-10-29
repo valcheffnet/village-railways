@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.storage.LevelResource;
+import net.valcheff.villagerailways.profile.HeightProfile;
 import net.valcheff.villagerailways.structure.PredictedStructure;
 import net.valcheff.villagerailways.structure.StructurePredictor;
 
@@ -24,14 +25,15 @@ public class RailwayNetwork {
 	private final Path folder;
 
 	private RailwayNetwork(StructurePredictor predictor, NetworkPlanner planner, NetworkStore store, OceanFilter oceanFilter,
-			StructureFilter structureFilter, NetworkPlanner.PathFilter buildable, Path folder) {
+			boolean seaTubes, StructureFilter structureFilter, NetworkPlanner.PathFilter buildable, Path folder) {
 		this.predictor = predictor;
 		this.planner = planner;
 		this.store = store;
 		this.oceanFilter = oceanFilter;
 		this.structureFilter = structureFilter;
 		// Cheapest checks first.
-		this.pathFilter = path -> buildable.accepts(path) && oceanFilter.accepts(path) && structureFilter.accepts(path);
+		this.pathFilter = path -> buildable.accepts(path) && (seaTubes || oceanFilter.accepts(path))
+				&& structureFilter.accepts(path);
 		this.folder = folder;
 	}
 
@@ -40,14 +42,15 @@ public class RailwayNetwork {
 	 *
 	 * @param buildable turns down paths that can no longer be built, such as ones through chunks that already exist
 	 * @param settings  the rules for lines planned from now on
+	 * @param seaTubes  whether lines cross seas in tubes; without them they keep off open ocean
 	 */
 	public static RailwayNetwork load(ServerLevel level, StructurePredictor predictor, NetworkPlanner.PathFilter buildable,
-			PlannerSettings settings) throws IOException {
+			PlannerSettings settings, boolean seaTubes) throws IOException {
 		Path folder = level.getServer().getWorldPath(LevelResource.ROOT).resolve("village_railways");
 		NetworkStore store = new NetworkStore(folder);
 		NetworkPlanner planner = store.load(settings);
 		planner.setRouteScorer(new TerrainScorer(level));
-		return new RailwayNetwork(predictor, planner, store, new OceanFilter(level, settings.maxOceanCrossing()),
+		return new RailwayNetwork(predictor, planner, store, new OceanFilter(level, HeightProfile.MAX_BRIDGE), seaTubes,
 				new StructureFilter(StructurePredictor.surfaceObstacles(level), settings.structureMargin()), buildable, folder);
 	}
 
@@ -74,6 +77,13 @@ public class RailwayNetwork {
 		store.save(planner);
 		return new Result((int) newVillages, added, planner.villages().size(), planner.links().size(),
 				planner.lastRejections());
+	}
+
+	/** Plans every line the known villages could still get, in land just opened to lines, and saves the network. */
+	public synchronized List<Link> retryAll() throws IOException {
+		List<Link> added = planner.retryAll(pathFilter);
+		store.save(planner);
+		return added;
 	}
 
 	public synchronized void save() throws IOException {

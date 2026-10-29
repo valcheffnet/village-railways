@@ -33,7 +33,7 @@ class RailwayConfigTest {
 		assertEquals(800, config.planner().maxLength());
 		assertEquals(40, config.planner().minRun());
 		assertEquals(PlannerSettings.DEFAULT.maxRun(), config.planner().maxRun());
-		assertEquals(new TrackSettings(TrackSettings.DEFAULT.cutDepth(), 6), config.trackFor(dir.resolve("new")));
+		assertEquals(new TrackSettings(TrackSettings.DEFAULT.cutDepth(), 6, false), config.trackFor(dir.resolve("new")));
 	}
 
 	@Test
@@ -47,10 +47,27 @@ class RailwayConfigTest {
 	@Test
 	void worldKeepsTheValuesOfItsFirstStart() throws IOException {
 		Path world = dir.resolve("world");
-		Files.writeString(dir.resolve("village_railways.properties"), "cutDepth=3\npillarSpacing=5\n");
-		assertEquals(new TrackSettings(3, 5), RailwayConfig.load(dir).trackFor(world));
-		Files.writeString(dir.resolve("village_railways.properties"), "cutDepth=7\npillarSpacing=12\n");
-		assertEquals(new TrackSettings(3, 5), RailwayConfig.load(dir).trackFor(world));
+		Files.writeString(dir.resolve("village_railways.properties"), "cutDepth=3\npillarSpacing=5\nseaTubes=0\n");
+		assertEquals(new TrackSettings(3, 5, false), RailwayConfig.load(dir).trackFor(world));
+		Files.writeString(dir.resolve("village_railways.properties"), "cutDepth=7\npillarSpacing=12\nseaTubes=1\n");
+		assertEquals(new TrackSettings(3, 5, false), RailwayConfig.load(dir).trackFor(world));
+	}
+
+	@Test
+	void newWorldKeepsTheSeaTubesChosenForIt() throws IOException {
+		RailwayConfig config = RailwayConfig.load(dir);
+		RailwayConfig.chooseNewWorldSeaTubes(true);
+		assertTrue(config.trackFor(dir.resolve("chosen")).seaTubes());
+		assertTrue(config.trackFor(dir.resolve("chosen")).seaTubes());
+		assertEquals(TrackSettings.DEFAULT.seaTubes(), config.trackFor(dir.resolve("next")).seaTubes());
+	}
+
+	@Test
+	void worldThatKeptItsValuesBeforeSeaTubesHasNone() throws IOException {
+		Path world = dir.resolve("world");
+		Files.createDirectories(world);
+		Files.writeString(world.resolve("track.properties"), "cutDepth=4\npillarSpacing=9\n");
+		assertEquals(new TrackSettings(4, 9, false), RailwayConfig.load(dir).trackFor(world));
 	}
 
 	@Test

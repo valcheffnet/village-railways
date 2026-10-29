@@ -33,7 +33,8 @@ import net.valcheff.villagerailways.network.Point;
  * <p>Three kinds of chunk matter. A chunk that existed before the mod was added (found in the region files on the
  * first start) is never touched. A chunk the mod saw generate gets its lines built while it generates; if a line is
  * planned only after that, the chunk gets the line later, as long as players have spent less than two minutes in it,
- * so nobody has built there yet. A chunk players have lived in longer is closed to new lines.
+ * so nobody has built there yet. A chunk players have lived in longer is closed to new lines. When the owner opens
+ * the existing land, every chunk there is opened to lines for good and gets them later like the others.
  *
  * <p>Registering a line and decorating a chunk share this object's lock, which closes the gap between a planner thread
  * registering a line and a generator thread decorating one of its chunks: each chunk of a line is either still to
@@ -51,7 +52,9 @@ public class BuildState {
 	public static final int REACH = 8;
 	private static final Pattern REGION_FILE = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
 	/** Marks the current file layout; the first layout started with a region count, never negative. */
-	private static final int LAYOUT = -3;
+	private static final int LAYOUT = -4;
+	/** The layout before the opened chunks were saved. */
+	private static final int LAYOUT_BUILT = -3;
 	/** The layout before the built lines were saved. */
 	private static final int LAYOUT_QUEUE = -2;
 
@@ -62,6 +65,8 @@ public class BuildState {
 	private final Map<Long, long[]> preexisting = new HashMap<>();
 	/** Chunks players have spent too long in for a line to be added. */
 	private final Map<Long, long[]> lived = new HashMap<>();
+	/** Chunks of the existing land the owner opened to lines, whoever lived there. */
+	private final Map<Long, long[]> opened = new HashMap<>();
 	private final Map<Long, List<VillagePair>> linesByChunk = new HashMap<>();
 	private final Map<VillagePair, Set<Long>> chunksByLine = new HashMap<>();
 	/** Generated chunks still to get a line planned after they generated. */
@@ -82,10 +87,13 @@ public class BuildState {
 		if (Files.exists(state.file)) {
 			try (DataInputStream in = new DataInputStream(Files.newInputStream(state.file))) {
 				int first = in.readInt();
-				if (first == LAYOUT || first == LAYOUT_QUEUE) {
+				if (first == LAYOUT || first == LAYOUT_BUILT || first == LAYOUT_QUEUE) {
 					readBits(in, in.readInt(), state.decorated);
 					readBits(in, in.readInt(), state.preexisting);
 					readBits(in, in.readInt(), state.lived);
+					if (first == LAYOUT) {
+						readBits(in, in.readInt(), state.opened);
+					}
 					int queued = in.readInt();
 					for (int i = 0; i < queued; i++) {
 						long chunk = in.readLong();
@@ -95,7 +103,7 @@ public class BuildState {
 									.add(new VillagePair(in.readLong(), in.readLong()));
 						}
 					}
-					if (first == LAYOUT) {
+					if (first == LAYOUT || first == LAYOUT_BUILT) {
 						int lines = in.readInt();
 						for (int i = 0; i < lines; i++) {
 							VillagePair line = new VillagePair(in.readLong(), in.readLong());
@@ -124,6 +132,7 @@ public class BuildState {
 			writeBits(out, decorated);
 			writeBits(out, preexisting);
 			writeBits(out, lived);
+			writeBits(out, opened);
 			out.writeInt(laterByChunk.size());
 			for (Map.Entry<Long, Set<VillagePair>> entry : laterByChunk.entrySet()) {
 				out.writeLong(entry.getKey());
@@ -218,6 +227,35 @@ public class BuildState {
 		return isSet(decorated, ChunkPos.pack(chunkX, chunkZ));
 	}
 
+	/**
+	 * Opens every chunk that exists, from before the mod or since, to lines: from now on they count as generated, so a
+	 * line planned through them is queued to be built there later, however long players have lived there.
+	 */
+	public synchronized void openExisting() {
+		for (Map<Long, long[]> existing : List.of(preexisting, decorated)) {
+			existing.forEach((region, words) -> {
+				long[] open = opened.computeIfAbsent(region, key -> new long[16]);
+				long[] generated = decorated.computeIfAbsent(region, key -> new long[16]);
+				for (int i = 0; i < 16; i++) {
+					open[i] |= words[i];
+					generated[i] |= words[i];
+				}
+			});
+		}
+	}
+
+	/**
+	 * Queues a registered line again for the generated chunks it has not been built into, those it lost to players
+	 * living there among them.
+	 */
+	public synchronized void requeueUnbuilt(VillagePair line) {
+		for (long chunk : chunksByLine.getOrDefault(line, Set.of())) {
+			if (isSet(decorated, chunk) && !isBuilt(chunk, line)) {
+				laterByChunk.computeIfAbsent(chunk, key -> new LinkedHashSet<>()).add(line);
+			}
+		}
+	}
+
 	/** Records that players have spent too long in a chunk for new lines. */
 	public synchronized void markLived(long chunk) {
 		setBit(lived, chunk);
@@ -225,14 +263,14 @@ public class BuildState {
 
 	/**
 	 * Takes up to {@code limit} queued chunks that {@code ready} accepts, each with the lines it is to get. A chunk
-	 * lived in by now loses its queued lines.
+	 * lived in by now loses its queued lines, unless it was opened.
 	 */
 	public synchronized Map<Long, List<VillagePair>> takeQueued(LongPredicate ready, int limit) {
 		Map<Long, List<VillagePair>> taken = new LinkedHashMap<>();
 		Iterator<Map.Entry<Long, Set<VillagePair>>> entries = laterByChunk.entrySet().iterator();
 		while (entries.hasNext() && taken.size() < limit) {
 			Map.Entry<Long, Set<VillagePair>> entry = entries.next();
-			if (isSet(lived, entry.getKey())) {
+			if (isClosed(entry.getKey())) {
 				entries.remove();
 			} else if (ready.test(entry.getKey())) {
 				taken.put(entry.getKey(), List.copyOf(entry.getValue()));
@@ -283,7 +321,7 @@ public class BuildState {
 	}
 
 	private boolean isClosed(long chunk) {
-		return isSet(preexisting, chunk) || isSet(lived, chunk);
+		return (isSet(preexisting, chunk) || isSet(lived, chunk)) && !isSet(opened, chunk);
 	}
 
 	/** Every chunk within {@code reach} blocks of the path. */

@@ -77,7 +77,7 @@ public final class HaltPlanner {
 		int open = Math.floorMod(plan.x()[0] * 31 + plan.z()[0], SPACING / 2);
 		for (int i = STATION_DISTANCE; i < plan.length() - STATION_DISTANCE; i++) {
 			Section section = plan.sections()[i];
-			if (section != Section.TUNNEL && section != Section.BRIDGE) {
+			if (section != Section.TUNNEL && section != Section.BRIDGE && section != Section.TUBE) {
 				open++;
 			}
 			if (open >= SPACING && farFrom(halts, i, STATION_DISTANCE) && fits(plan, i, terrain, nearLine, false)) {
@@ -124,10 +124,11 @@ public final class HaltPlanner {
 			return false;
 		}
 		int track = plan.track()[i];
-		// Clear of bridges by as much ground as a double bridge spans, so a halt never stands where one runs on.
+		// Clear of bridges and tubes by as much ground as a double bridge spans, so a halt never stands where one
+		// runs on.
 		int bridgeClearance = HALF_LENGTH + TrackPlanner.MAX_BRIDGE_GAP;
 		for (int j = Math.max(0, i - bridgeClearance); j <= Math.min(plan.length() - 1, i + bridgeClearance); j++) {
-			if (plan.sections()[j] == Section.BRIDGE) {
+			if (plan.sections()[j] == Section.BRIDGE || plan.sections()[j] == Section.TUBE) {
 				return false;
 			}
 		}

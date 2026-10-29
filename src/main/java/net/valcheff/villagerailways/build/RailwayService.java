@@ -1,11 +1,13 @@
 package net.valcheff.villagerailways.build;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,6 +72,8 @@ public class RailwayService {
 	private static final int SPAWN_SQUARES = 2;
 	/** Ticks players may spend in a chunk before it is closed to new lines: two minutes. */
 	private static final int LIVED_TICKS = 2400;
+	/** Left in a world's folder to open its existing land to lines at the next start. */
+	private static final String OPEN_LAND_FILE = "open-land";
 	private static final int LIVED_CHECK_INTERVAL = 40;
 	/** Seconds between reports of the planning that generating chunks wait for, as at the first start of a world. */
 	private static final int PROGRESS_SECONDS = 3;
@@ -124,9 +128,10 @@ public class RailwayService {
 		Path root = overworld.getServer().getWorldPath(LevelResource.ROOT);
 		Path folder = root.resolve("village_railways");
 		BuildState buildState = BuildState.load(folder, DimensionType.getStorageFolder(Level.OVERWORLD, root).resolve("region"));
+		TrackSettings trackSettings = config.trackFor(folder);
 		RailwayNetwork network = RailwayNetwork.load(overworld, StructurePredictor.villages(overworld),
-				path -> !buildState.touchesClosed(path), config.planner());
-		RailwayService service = new RailwayService(overworld, network, buildState, config.trackFor(folder));
+				path -> !buildState.touchesClosed(path), config.planner(), trackSettings.seaTubes());
+		RailwayService service = new RailwayService(overworld, network, buildState, trackSettings);
 		network.planner().setUnbuilt(link -> buildState.isUnbuilt(link.key()));
 		List<Link> tracks = new ArrayList<>(network.planner().links());
 		tracks.addAll(network.planner().stations());
@@ -135,6 +140,11 @@ public class RailwayService {
 				service.lines.put(link.key(), link);
 				buildState.register(link, true, service.reachOf(link));
 			}
+		}
+		Path openLand = folder.resolve(OPEN_LAND_FILE);
+		if (Files.exists(openLand)) {
+			service.openExistingLand();
+			Files.delete(openLand);
 		}
 		// New worlds put spawn near the origin; plan it before any chunk there generates.
 		for (int squareX = -SPAWN_SQUARES; squareX < SPAWN_SQUARES; squareX++) {
@@ -148,6 +158,52 @@ public class RailwayService {
 
 	public RailwayNetwork network() {
 		return network;
+	}
+
+	/**
+	 * Asks for the existing land of the world saved in {@code folder} to be opened to lines at its next start, or takes
+	 * that back.
+	 */
+	public static void requestOpenLand(Path folder, boolean open) throws IOException {
+		Path file = folder.resolve(OPEN_LAND_FILE);
+		if (open) {
+			Files.createDirectories(folder);
+			Files.writeString(file, "Village Railways opens the existing land to lines at the next start.\n");
+		} else {
+			Files.deleteIfExists(file);
+		}
+	}
+
+	/** Whether the existing land of the world saved in {@code folder} opens to lines at its next start. */
+	public static boolean isOpenLandRequested(Path folder) {
+		return Files.exists(folder.resolve(OPEN_LAND_FILE));
+	}
+
+	/**
+	 * Opens the land that exists to lines, through player builds as well: the lines that could not be built there are
+	 * built after all, and every pair of villages is tried again. Lines are built into a chunk when it is next loaded.
+	 */
+	private void openExistingLand() throws IOException {
+		buildState.openExisting();
+		for (Link link : lines.values()) {
+			buildState.requeueUnbuilt(link.key());
+		}
+		List<Link> reopened = new ArrayList<>();
+		List<Link> tracks = new ArrayList<>(network.planner().links());
+		tracks.addAll(network.planner().stations());
+		for (Link link : tracks) {
+			if (link.status() == Link.Status.BLOCKED) {
+				network.planner().setStatus(link.key(), Link.Status.PLANNED);
+				reopened.add(link.withStatus(Link.Status.PLANNED));
+			}
+		}
+		List<Link> added = network.retryAll();
+		addLines(reopened);
+		addLines(added);
+		buildState.save();
+		network.save();
+		VillageRailways.LOGGER.info("Opened the existing land to railway lines: {} blocked lines and stations go on, "
+				+ "{} new lines and stations; they are built as their chunks load", reopened.size(), added.size());
 	}
 
 	/** Runs {@code task} on the planner thread, once the planning queued before it is done. */
@@ -209,28 +265,32 @@ public class RailwayService {
 	private void planSquare(int squareX, int squareZ) {
 		BlockPos center = new BlockPos(squareX * SQUARE + SQUARE / 2, 0, squareZ * SQUARE + SQUARE / 2);
 		try {
-			RailwayNetwork.Result result = network.explore(center, SQUARE / 2 - 1);
-			wallsStale |= !result.added().isEmpty();
-			for (Link link : result.added()) {
-				forgetStationPlans(link);
-				if (lines.containsKey(link.key())) {
-					// Planned before and changed since: a line moved to another end, a station made western.
-					buildState.forget(link.key());
-					plans.remove(link.key());
-				}
-				if (buildState.register(link, false, reachOf(link))) {
-					lines.put(link.key(), link);
-					if (buildState.hasQueued(link.key())) {
-						// Part of it goes into chunks that exist already: profile it here, not on the server thread.
-						planOf(link);
-					}
-				} else {
-					// A chunk on the line generated while it was being planned.
-					network.planner().setStatus(link.key(), Link.Status.BLOCKED);
-				}
-			}
+			addLines(network.explore(center, SQUARE / 2 - 1).added());
 		} catch (RuntimeException | IOException e) {
 			VillageRailways.LOGGER.error("Could not plan railway lines around {}", center, e);
+		}
+	}
+
+	/** Registers new lines and stations for building, or ones planned before and changed since. */
+	private void addLines(List<Link> added) {
+		wallsStale |= !added.isEmpty();
+		for (Link link : added) {
+			forgetStationPlans(link);
+			if (lines.containsKey(link.key())) {
+				// Planned before and changed since: a line moved to another end, a station made western.
+				buildState.forget(link.key());
+				plans.remove(link.key());
+			}
+			if (buildState.register(link, false, reachOf(link))) {
+				lines.put(link.key(), link);
+				if (buildState.hasQueued(link.key())) {
+					// Part of it goes into chunks that exist already: profile it here, not on the server thread.
+					planOf(link);
+				}
+			} else {
+				// A chunk on the line generated while it was being planned.
+				network.planner().setStatus(link.key(), Link.Status.BLOCKED);
+			}
 		}
 	}
 
@@ -248,17 +308,20 @@ public class RailwayService {
 				chunk -> level.getChunkSource().getChunkNow(ChunkPos.getX(chunk), ChunkPos.getZ(chunk)) != null, LATER_PER_TICK);
 		for (Map.Entry<Long, List<VillagePair>> entry : queued.entrySet()) {
 			ChunkPos chunk = ChunkPos.unpack(entry.getKey());
+			// A line not profiled yet is profiled off the server thread, and the chunk tried again after with all its
+			// lines: built one after another, the clearing for a later one would take away the rails of the first.
+			List<Link> unprofiled = entry.getValue().stream().filter(key -> plans.get(key) == null)
+					.map(lines::get).filter(Objects::nonNull).toList();
+			if (!unprofiled.isEmpty()) {
+				unprofiled.forEach(link -> planner.execute(() -> planOf(link)));
+				entry.getValue().stream().filter(lines::containsKey)
+						.forEach(key -> buildState.requeue(entry.getKey(), key));
+				continue;
+			}
 			List<TrackPlan> toBuild = new ArrayList<>();
 			for (VillagePair key : entry.getValue()) {
 				Optional<TrackPlan> plan = plans.get(key);
-				if (plan == null) {
-					// Not profiled yet: profile it off the server thread and try the chunk again after.
-					Link link = lines.get(key);
-					if (link != null) {
-						planner.execute(() -> planOf(link));
-						buildState.requeue(entry.getKey(), key);
-					}
-				} else if (plan.isPresent()) {
+				if (plan != null && plan.isPresent()) {
 					toBuild.add(plan.get());
 				}
 			}
