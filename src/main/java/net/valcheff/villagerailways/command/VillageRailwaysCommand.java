@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -37,6 +38,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.valcheff.villagerailways.VillageRailways;
+import net.valcheff.villagerailways.build.RailwayService;
 import net.valcheff.villagerailways.network.Link;
 import net.valcheff.villagerailways.network.NetworkMap;
 import net.valcheff.villagerailways.network.NetworkPlanner;
@@ -57,15 +59,22 @@ import net.valcheff.villagerailways.structure.StructurePredictor;
  *       the real village starts with the prediction. Meant for test worlds: it creates chunks.</li>
  *   <li>{@code /villagerailways network [radius]} plans lines for the villages around the caller and draws the whole
  *       network to {@code village_railways/network.png} in the world folder.</li>
+ *   <li>{@code /villagerailways lines [radius]} lists the planned lines around the caller, nearest first, numbered as
+ *       {@code profile} and {@code build} count them, with how far each one is built.</li>
+ *   <li>{@code /villagerailways map [radius]} draws the network around the caller as planned so far, without planning
+ *       more, to {@code village_railways/network.png}.</li>
  *   <li>{@code /villagerailways profile [n]} lays out the n-th nearest planned line block by block and draws its height
  *       profile to {@code village_railways/profile.png}.</li>
  *   <li>{@code /villagerailways build [n]} generates every chunk along the n-th nearest line, which builds it, and
  *       checks that a rail lies on every block of it. Meant for test worlds.</li>
+ *   <li>{@code /villagerailways station [n]} does the same for the n-th nearest station track.</li>
  *   <li>{@code /villagerailways speed} turns on or off a minecart speed readout above the caller's hotbar.</li>
  * </ul>
  */
 public final class VillageRailwaysCommand {
 	private static final int DEFAULT_RADIUS = 1000;
+	/** Most lines {@code lines} lists. */
+	private static final int MAX_LISTED = 30;
 
 	private VillageRailwaysCommand() {
 	}
@@ -103,7 +112,15 @@ public final class VillageRailwaysCommand {
 				.then(literal("network")
 						.executes(context -> plan(context, DEFAULT_RADIUS))
 						.then(argument("radius", IntegerArgumentType.integer(16, 20000))
-								.executes(context -> plan(context, IntegerArgumentType.getInteger(context, "radius"))))));
+								.executes(context -> plan(context, IntegerArgumentType.getInteger(context, "radius")))))
+				.then(literal("lines")
+						.executes(context -> listLines(context, DEFAULT_RADIUS))
+						.then(argument("radius", IntegerArgumentType.integer(16, 20000))
+								.executes(context -> listLines(context, IntegerArgumentType.getInteger(context, "radius")))))
+				.then(literal("map")
+						.executes(context -> map(context, DEFAULT_RADIUS))
+						.then(argument("radius", IntegerArgumentType.integer(16, 20000))
+								.executes(context -> map(context, IntegerArgumentType.getInteger(context, "radius"))))));
 	}
 
 	/** Plans the area on the planner thread, so the server keeps ticking, then draws the map and reports. */
@@ -115,26 +132,78 @@ public final class VillageRailwaysCommand {
 		BlockPos origin = BlockPos.containing(source.getPosition());
 		VillageRailways.service().planArea(origin, radius, () -> {
 			long millis = (System.nanoTime() - started) / 1_000_000;
-			NetworkMap.ObstacleSource obstacles = (minX, minZ, maxX, maxZ) -> network.structureFilter()
-					.obstaclesIn(minX, minZ, maxX, maxZ).stream()
-					.map(structure -> new NetworkMap.Obstacle(structure.structure(), structure.bounds().minX(),
-							structure.bounds().minZ(), structure.bounds().maxX(), structure.bounds().maxZ()))
-					.toList();
-			Component message;
-			try {
-				Path map = NetworkMap.write(network.planner(), new Point(origin.getX(), origin.getZ()), radius,
-						network.oceanFilter()::isOcean, obstacles, network.folder().resolve("network.png"));
-				long lines = network.planner().links().size();
-				message = Component.literal("Planned in " + millis + " ms. Network: " + network.planner().villages().size()
-						+ " villages, " + lines + " lines. Map: " + map.toAbsolutePath());
-			} catch (IOException e) {
-				VillageRailways.LOGGER.error("Could not draw the railway network", e);
-				message = Component.literal("Could not draw the map: " + e.getMessage());
-			}
-			Component reply = message;
-			source.getServer().executeIfPossible(() -> source.sendSuccess(() -> reply, false));
+			reply(source, "Planned in " + millis + " ms. " + drawMap(network, origin, radius));
 		});
 		return 1;
+	}
+
+	/** Draws the network as planned so far on the planner thread, so the server keeps ticking, and reports. */
+	private static int map(CommandContext<CommandSourceStack> context, int radius) {
+		CommandSourceStack source = context.getSource();
+		RailwayNetwork network = VillageRailways.network();
+		BlockPos origin = BlockPos.containing(source.getPosition());
+		VillageRailways.service().afterPlanning(() -> reply(source, drawMap(network, origin, radius)));
+		return 1;
+	}
+
+	private static void reply(CommandSourceStack source, String message) {
+		source.getServer().executeIfPossible(() -> source.sendSuccess(() -> Component.literal(message), false));
+	}
+
+	/** Draws the square of {@code radius} blocks around {@code origin} to {@code network.png}; tells how it went. */
+	private static String drawMap(RailwayNetwork network, BlockPos origin, int radius) {
+		NetworkMap.ObstacleSource obstacles = (minX, minZ, maxX, maxZ) -> network.structureFilter()
+				.obstaclesIn(minX, minZ, maxX, maxZ).stream()
+				.map(structure -> new NetworkMap.Obstacle(structure.structure(), structure.bounds().minX(),
+						structure.bounds().minZ(), structure.bounds().maxX(), structure.bounds().maxZ()))
+				.toList();
+		try {
+			Path map = NetworkMap.write(network.planner(), new Point(origin.getX(), origin.getZ()), radius,
+					network.oceanFilter()::isOcean, obstacles, network.folder().resolve("network.png"));
+			return "Network: " + network.planner().villages().size() + " villages, " + network.planner().links().size()
+					+ " lines. Map: " + map.toAbsolutePath();
+		} catch (IOException e) {
+			VillageRailways.LOGGER.error("Could not draw the railway network", e);
+			return "Could not draw the map: " + e.getMessage();
+		}
+	}
+
+	/** Lists the lines within {@code radius} blocks, nearest first, with how far each one is built. */
+	private static int listLines(CommandContext<CommandSourceStack> context, int radius) {
+		CommandSourceStack source = context.getSource();
+		Point origin = new Point((int) source.getPosition().x, (int) source.getPosition().z);
+		long radiusSq = (long) radius * radius;
+		List<Link> near = VillageRailways.network().planner().links().stream()
+				.filter(link -> distanceSq(link, origin) <= radiusSq)
+				.sorted(Comparator.comparingLong(link -> distanceSq(link, origin)))
+				.toList();
+		RailwayService service = VillageRailways.service();
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		List.of("built", "building", "planned", "blocked").forEach(state -> counts.put(state, 0));
+		List<String> report = new ArrayList<>();
+		for (int i = 0; i < near.size(); i++) {
+			Link link = near.get(i);
+			int[] progress = service.progress(link.key());
+			String state = switch (link.status()) {
+				case BUILT -> "built";
+				case BLOCKED -> "blocked";
+				case PLANNED -> progress == null || progress[0] == 0 ? "planned" : "building";
+			};
+			counts.merge(state, 1, Integer::sum);
+			if (i < MAX_LISTED) {
+				String detail = state.equals("building") ? state + ", " + progress[0] + " of " + progress[1] + " chunks" : state;
+				report.add("  " + (i + 1) + ". " + (link.trunk() ? "trunk " : "") + describe(link) + ": " + length(link)
+						+ " blocks, " + detail);
+			}
+		}
+		if (near.size() > MAX_LISTED) {
+			report.add("  and " + (near.size() - MAX_LISTED) + " more further away");
+		}
+		String summary = counts.entrySet().stream().filter(entry -> entry.getValue() > 0)
+				.map(entry -> entry.getValue() + " " + entry.getKey()).collect(Collectors.joining(", "));
+		report.addFirst(near.size() + " lines within " + radius + " blocks" + (summary.isEmpty() ? "" : ": " + summary));
+		report.forEach(line -> source.sendSuccess(() -> Component.literal(line), false));
+		return near.size();
 	}
 
 	private static int profile(CommandContext<CommandSourceStack> context, int n) {
@@ -354,6 +423,17 @@ public final class VillageRailwaysCommand {
 		Point from = link.path().getFirst();
 		Point to = link.path().getLast();
 		return "line " + from.x() + ", " + from.z() + " to " + to.x() + ", " + to.z();
+	}
+
+	/** Blocks of track along a line's path. */
+	private static int length(Link link) {
+		int length = 0;
+		for (int i = 1; i < link.path().size(); i++) {
+			Point p = link.path().get(i - 1);
+			Point q = link.path().get(i);
+			length += Math.abs(q.x() - p.x()) + Math.abs(q.z() - p.z());
+		}
+		return length;
 	}
 
 	private static long distanceSq(Link link, Point origin) {

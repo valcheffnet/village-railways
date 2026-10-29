@@ -124,6 +124,16 @@ public class RailwayService {
 		return network;
 	}
 
+	/** Runs {@code task} on the planner thread, once the planning queued before it is done. */
+	public void afterPlanning(Runnable task) {
+		planner.execute(task);
+	}
+
+	/** How many chunks of a line have generated with it so far, and how many it has; null for a line not registered. */
+	public int[] progress(VillagePair line) {
+		return buildState.progress(line);
+	}
+
 	/** Queues planning for the squares around every player that are not planned yet. */
 	public void planAroundPlayers() {
 		for (ServerPlayer player : level.players()) {

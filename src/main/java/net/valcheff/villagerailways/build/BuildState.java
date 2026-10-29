@@ -177,6 +177,15 @@ public class BuildState {
 		return chunks == null || chunks.stream().noneMatch(chunk -> isSet(decorated, chunk));
 	}
 
+	/** How many chunks of a line have generated with it so far, and how many it has; null for a line not registered. */
+	public synchronized int[] progress(VillagePair line) {
+		Set<Long> chunks = chunksByLine.get(line);
+		if (chunks == null) {
+			return null;
+		}
+		return new int[] {(int) chunks.stream().filter(chunk -> isSet(decorated, chunk)).count(), chunks.size()};
+	}
+
 	/** Whether a line still has chunks queued to get it after they generated. */
 	public synchronized boolean hasQueued(VillagePair line) {
 		Set<Long> chunks = chunksByLine.get(line);
