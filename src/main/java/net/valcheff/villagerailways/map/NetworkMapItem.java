@@ -87,6 +87,13 @@ public final class NetworkMapItem {
 		return maps;
 	}
 
+	/** One map of the network round a western station, for over its door, with a red X where the station stands. */
+	public static ItemStack stationMap(ServerLevel level, NetworkPlanner planner, BlockPos station) throws IOException {
+		ItemStack map = create(level, planner, station.getX(), station.getZ(), DEFAULT_RADIUS);
+		MapItemSavedData.addTargetDecoration(map, station, "station", MapDecorationTypes.RED_X);
+		return map;
+	}
+
 	/** Draws a network map again with the network as it is now, so a map on a wall follows the lines being built. */
 	public static void redraw(ServerLevel level, NetworkPlanner planner, MapId id) {
 		MapItemSavedData data = level.getMapData(id);

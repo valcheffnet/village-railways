@@ -283,7 +283,9 @@ public class RailwayService {
 			Optional<TrackPlan> plan = planOf(station);
 			if (plan.isPresent()) {
 				LineBuilder.MapWall wall = LineBuilder.mapWall(plan.get());
-				if (wall.frames().stream().allMatch(frame -> isBuiltAndLoaded(station, frame)
+				List<BlockPos> spots = new ArrayList<>(wall.frames());
+				spots.add(wall.door());
+				if (spots.stream().allMatch(frame -> isBuiltAndLoaded(station, frame)
 						&& isBuiltAndLoaded(station, frame.relative(wall.facing().getOpposite())))) {
 					hangMapWall(station, plan.get(), wall);
 				}
@@ -302,14 +304,20 @@ public class RailwayService {
 				&& level.getChunkSource().getChunkNow(chunkX, chunkZ) != null;
 	}
 
-	/** Glow item frames with the station's maps on its wall; a spot that has a frame already keeps it. */
+	/**
+	 * Glow item frames with the station's maps on its wall, and one with a single map over its door; a spot that has
+	 * a frame already keeps it.
+	 */
 	private void hangMapWall(Link station, TrackPlan plan, LineBuilder.MapWall wall) {
 		int middle = plan.length() / 2;
 		BlockPos at = new BlockPos(plan.x()[middle], plan.track()[middle], plan.z()[middle]);
 		try {
-			List<ItemStack> maps = NetworkMapItem.stationWall(level, network.planner(), at);
+			List<ItemStack> maps = new ArrayList<>(NetworkMapItem.stationWall(level, network.planner(), at));
+			List<BlockPos> spots = new ArrayList<>(wall.frames());
+			maps.add(NetworkMapItem.stationMap(level, network.planner(), at));
+			spots.add(wall.door());
 			for (int i = 0; i < maps.size(); i++) {
-				BlockPos spot = wall.frames().get(i);
+				BlockPos spot = spots.get(i);
 				if (level.getEntitiesOfClass(ItemFrame.class, new AABB(spot)).isEmpty()) {
 					GlowItemFrame frame = new GlowItemFrame(level, spot, wall.facing());
 					frame.setItem(maps.get(i), false);

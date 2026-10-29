@@ -148,6 +148,8 @@ public final class LineBuilder {
 	private static final int WALL_X = 22;
 	private static final int WALL_Y = 4;
 	private static final int WALL_Z = 16;
+	/** The frame with a single map over the door of the western house, facing the tracks too. */
+	private static final int DOOR_MAP_Z = 9;
 
 	/**
 	 * The slice of a tunnel template a block is built from: a slice of the template turned to run {@code forward},
@@ -1014,8 +1016,8 @@ public final class LineBuilder {
 		};
 	}
 
-	/** The item frames of the map wall in a western house, and the way they face. */
-	public record MapWall(List<BlockPos> frames, Direction facing) {
+	/** The item frames of the map wall in a western house, the one over its door, and the way they face. */
+	public record MapWall(List<BlockPos> frames, BlockPos door, Direction facing) {
 	}
 
 	/**
@@ -1037,7 +1039,8 @@ public final class LineBuilder {
 						.relative(facing.getCounterClockWise(), column - (count - 1) / 2));
 			}
 		}
-		return new MapWall(frames, facing);
+		BlockPos door = westernBlock(westernOrigin(station, middle), rotation, WALL_X, WALL_Y, DOOR_MAP_Z);
+		return new MapWall(frames, door, facing);
 	}
 
 	/** A block of the western structure in the world, given by its place in the structure. */
