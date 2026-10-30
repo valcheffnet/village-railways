@@ -1,0 +1,69 @@
+plugins {
+	id 'java-library'
+	id 'net.neoforged.moddev' version '2.0.148'
+}
+
+// The NeoForge build shares the mod's code with the Fabric build in the parent folder: everything under src/main and
+// src/client except the Fabric entry points, plus the NeoForge entry points here. Run it from this folder.
+def root = file('..')
+def rootProps = new Properties()
+file('../gradle.properties').withInputStream { rootProps.load(it) }
+
+version = rootProps.getProperty('version')
+group = 'net.valcheff'
+
+base {
+	archivesName = 'village-railways-neoforge'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+sourceSets.main {
+	java {
+		srcDirs = ['src/main/java', "${root}/src/main/java", "${root}/src/client/java"]
+		exclude '**/fabric/**'
+	}
+	resources {
+		srcDirs = ["${root}/src/main/resources", "${root}/src/client/resources"]
+		exclude 'fabric.mod.json'
+	}
+}
+
+neoForge {
+	version = project.neo_version
+
+	runs {
+		client {
+			client()
+		}
+		server {
+			server()
+			programArgument '--nogui'
+		}
+	}
+
+	mods {
+		village_railways {
+			sourceSet(sourceSets.main)
+		}
+	}
+}
+
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+	var replaceProperties = [
+		minecraft_version_range: minecraft_version_range,
+		neo_version            : neo_version,
+		mod_version            : project.version,
+	]
+	inputs.properties replaceProperties
+	expand replaceProperties
+	from 'src/main/templates'
+	into 'build/generated/sources/modMetadata'
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 25
+}

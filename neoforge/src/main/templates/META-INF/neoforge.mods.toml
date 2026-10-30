@@ -1,0 +1,34 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="village_railways"
+version="${mod_version}"
+displayName="Village Railways"
+# The server builds everything: clients without the mod join it as well.
+displayTest="IGNORE_ALL_VERSION"
+authors="SasnycoN"
+description='''
+Links villages with minecart railway lines built from vanilla blocks. Works in singleplayer, and on a server, where vanilla clients can join without the mod.
+'''
+
+[[mixins]]
+config="village_railways.mixins.json"
+
+[[mixins]]
+config="village_railways.client.mixins.json"
+
+[[dependencies.village_railways]]
+modId="neoforge"
+type="required"
+versionRange="[${neo_version},)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.village_railways]]
+modId="minecraft"
+type="required"
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"
