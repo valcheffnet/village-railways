@@ -29,6 +29,12 @@ public final class FabricEntry implements ModInitializer {
 			public Path gameDir() {
 				return FabricLoader.getInstance().getGameDir();
 			}
+
+			@Override
+			public String version() {
+				return FabricLoader.getInstance().getModContainer(VillageRailways.MOD_ID).orElseThrow().getMetadata()
+						.getVersion().getFriendlyString();
+			}
 		});
 
 		PayloadTypeRegistry.playC2S().register(ConfigSync.Request.TYPE, ConfigSync.Request.CODEC);

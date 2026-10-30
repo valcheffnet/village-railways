@@ -57,7 +57,7 @@ If you want lines through the old land too, a server admin, or the player in a s
 
 ## Maps
 
-Every player joining the world for the first time gets one map of the network, and only that once. `/villagerailways mapitem` gives you a vanilla map of the network that reaches much farther than a normal map would. `/villagerailways mapwall` gives you a set of them to hang as a wall in item frames, the same kind the large stations have.
+With `starterMap` turned on, every player joining the world for the first time gets one map of the network, and only that once. `/villagerailways mapitem` gives you a vanilla map of the network that reaches much farther than a normal map would. `/villagerailways mapwall` gives you a set of them to hang as a wall in item frames, the same kind the large stations have.
 
 <table>
 <tr>
@@ -92,6 +92,8 @@ Plans for the next versions, in no set order:
 
 Fabric and NeoForge jars go in the `mods` folder, the Paper jar in `plugins`. Mod Menu is optional on Fabric and only adds the settings screen.
 
+The Paper jar also runs on forks of Paper such as Purpur. It does not load on Spigot, CraftBukkit or Folia.
+
 ## Optimization
 
 The generation is optimized to be fast and accurate, and it shows its progress in the log and on the loading screen. Keep in mind that, because of some limitations of Minecraft versions before 26.3, the first start of a world takes a bit longer there (around 40 seconds).
@@ -107,7 +109,9 @@ Everything is in `config/village_railways.properties` (`plugins/VillageRailways`
 | `maxLinks` | `3` | Most lines one village may have, 1 to 3. |
 | `maxLength` | `1200` | Longest line between two villages, in blocks. Double lines may be longer. |
 | `minRun`, `maxRun` | `32`, `64` | The straight and the side step of a line at a slant. |
-| `starterMap` | `1` | A player joining the world for the first time gets a map of the network. `0` turns it off. |
+| `starterMap` | `0` | `1` gives a player joining the world for the first time a map of the network. |
+| `updateCheck` | `1` | When the server starts it asks GitHub once whether a newer version is out, and tells admins when they join. Nothing about the server or its players is sent. `0` turns it off. |
+| `supportMessage` | `1` | Admins get a line with the Discord link for questions and bugs when they join. `0` turns it off. |
 | `cutDepth` | `5` | Where the ground is higher than this over the rail, the line goes into a tunnel. |
 | `pillarSpacing` | `9` | Blocks between the pillars of a bridge in the open. |
 | `seaTubes` | `0` | `1` crosses seas in glass tubes. |
@@ -145,3 +149,5 @@ Found a bug or have an idea? Come to [Discord](https://discord.com/invite/X6yxJp
 ## License
 
 All rights reserved. You may use the mod on any server, put it in modpacks and share the unmodified jars; the code and assets may not be used in other projects. See [LICENSE.md](LICENSE.md).
+
+The mod icon is [Railway](https://www.flaticon.com/free-icon/railway_10682260) by Nueng_wana from Flaticon.
