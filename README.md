@@ -53,7 +53,7 @@ On long stretches there are halts, small brick huts by the track with a minecart
 
 Out of the box, lines only go through land that hasn't been generated yet, so nothing anyone has built gets touched. Lines will be generated only in the newly explored land.
 
-If you want lines through the old land too, a server admin, or the player in a singleplayer world, can force the generation on the existing chunks, in the settings screen ("Open the existing land to lines...", then "Backup and Build") or with `/villagerailways openland`. On the next server start the world is backed up into the `backups` folder first, then the lines are planned through the old land and built as it loads. Be warned that they will cut through whatever is in the way, houses and farms and redstone included, and only the backup can undo that.
+If you want lines through the old land too, a server admin, or the player in a singleplayer world, can force the generation on the existing chunks, in the settings screen ("Open the existing land to lines...", then "Backup and Build") or with `/villagerailways openland`. On the next server start the world is backed up into the `backups` folder first, then the lines are planned through the old land and built as it loads. Lines still keep clear of villages and other structures the game generated, but they know nothing about what players have built, so houses, farms and redstone in their way get cut through, and only the backup can undo that.
 
 ## Maps
 
