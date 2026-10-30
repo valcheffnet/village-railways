@@ -6,7 +6,7 @@
 
 Villages in Minecraft sit hundreds or sometimes thousands of blocks apart with nothing but wilderness between them. Village Railways joins them with minecart railways. Each village gets lines to up to three of its nearest neighbours. Everything is vanilla blocks, so the railways stay in the world even if you remove the mod later.
 
-It runs on the server. Players join with a normal vanilla client and don't need to install anything.
+Players join with a normal vanilla client and don't need to install anything.
 
 This branch is Minecraft 26.3; the 26.2, 26.1 and 1.21.11 versions are on their own branches.
 
@@ -51,7 +51,7 @@ On long stretches there are halts, small brick huts by the track with a minecart
 
 ## Old worlds
 
-Out of the box, lines only go through land that hasn't been generated yet, so nothing anyone has built gets touched. Lines will be generated only in the newly explored land.
+Out of the box, lines are only generated in newly explored land, so nothing anyone has built gets touched.
 
 If you want lines through the old land too, a server admin, or the player in a singleplayer world, can force the generation on the existing chunks, in the settings screen ("Open the existing land to lines...", then "Backup and Build") or with `/villagerailways openland`. On the next server start the world is backed up into the `backups` folder first, then the lines are planned through the old land and built as it loads. Lines still keep clear of villages and other structures the game generated, but they know nothing about what players have built, so houses, farms and redstone in their way get cut through, and only the backup can undo that.
 
