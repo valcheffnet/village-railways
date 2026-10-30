@@ -1,6 +1,6 @@
 # Village Railways
 
-![A western station at night](art/banner.jpg)
+![A large station at night](art/banner.jpg)
 
 **Server-side. Vanilla clients welcome.**
 
@@ -12,7 +12,7 @@ Not released yet. The code here is for Minecraft 26.3; builds for 26.2, 26.1 and
 
 ## Screenshots
 
-<p align="center"><img src="art/screenshots/station-platform.jpg" alt="Station platform" width="100%"><br><em>The platform of a western station.</em></p>
+<p align="center"><img src="art/screenshots/station-platform.jpg" alt="Station platform" width="100%"><br><em>The platform of a large station.</em></p>
 
 <table>
 <tr>
@@ -49,7 +49,7 @@ Lines keep off the buildings of the villages they serve, away from other village
 
 The track stays level. Shallow hills get an open cut, deeper ones a tunnel lined with cobblestone and oak frames and lit with copper lanterns. Rivers, ravines and drops are crossed on bridges with pillars and railings, and where a tunnel breaks into a cave, the line crosses the cave on a bridge of its own. Powered rails keep the cart at speed, run by redstone torches hidden under the track.
 
-Each village gets one station, a straight track just outside it where its lines meet. Where a trunk line comes in, the station can be a western station: a big timber house beside two tracks, with seats, two minecart dispensers and a map of the network on the wall. Trunk lines and bridges have double track, and every switch has a lever.
+Each village gets one station, a straight track just outside it where its lines meet. Where a trunk line comes in, the station can be a large station: a big timber house beside two tracks, with seats, two minecart dispensers and a map of the network on the wall. Trunk lines and bridges have double track, and every switch has a lever.
 
 Long stretches get halts, a small brick hut on a platform with a minecart dispenser. There is about one every 800 blocks, and one at each end of a long tunnel.
 
@@ -63,11 +63,11 @@ To lay lines through the land that already exists as well, an operator can open 
 
 ## Maps
 
-`/villagerailways mapitem` gives you a vanilla map with the whole network on it, reaching much farther than a normal map. `/villagerailways mapwall` gives a set of maps for a wall of item frames. The western stations hang such maps on their walls.
+`/villagerailways mapitem` gives you a vanilla map with the whole network on it, reaching much farther than a normal map. `/villagerailways mapwall` gives a set of maps for a wall of item frames. The large stations hang such maps on their walls.
 
 <table>
 <tr>
-<td width="50%"><img src="art/screenshots/station-map.jpg" alt="Map of the network in a station"><br><em>A map of the network on the wall of a western station.</em></td>
+<td width="50%"><img src="art/screenshots/station-map.jpg" alt="Map of the network in a station"><br><em>A map of the network on the wall of a large station.</em></td>
 <td width="50%"><img src="art/screenshots/network-map.png" alt="A map of the network"><br><em>A network map from <code>/villagerailways mapitem</code>.</em></td>
 </tr>
 </table>
