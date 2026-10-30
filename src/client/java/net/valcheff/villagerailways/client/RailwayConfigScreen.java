@@ -143,7 +143,7 @@ public class RailwayConfigScreen extends Screen {
 		rebuildWidgets();
 	}
 
-	/** Asks for the existing land to open after a warning, or calls that off. */
+	/** Asks for the existing land to open, backed up first, after a warning, or calls that off. */
 	private void openLand() {
 		if (openLand) {
 			ClientPlayNetworking.send(new ConfigSync.OpenLand(false));
@@ -155,10 +155,10 @@ public class RailwayConfigScreen extends Screen {
 			}
 			minecraft.gui.setScreen(this);
 		}, Component.literal("Open the existing land to lines?"), Component.literal("At the next start of the server, "
-				+ "railway lines are planned through the land that exists now, where players have built. They can cut "
-				+ "through houses, farms and redstone, and are built there as the land loads. A start that has done "
-				+ "this cannot be undone, so make a backup of the world first."),
-				Component.literal("Open at the next start"), CommonComponents.GUI_CANCEL));
+				+ "the world is backed up, then railway lines are planned through the land that exists now, where "
+				+ "players have built. They can cut through houses, farms and redstone, and are built there as the "
+				+ "land loads. Only the backup can undo it."),
+				Component.literal("Backup and Build"), CommonComponents.GUI_CANCEL));
 	}
 
 	@Override

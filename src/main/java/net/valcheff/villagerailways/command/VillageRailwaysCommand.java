@@ -157,8 +157,9 @@ public final class VillageRailwaysCommand {
 			return 0;
 		}
 		source.sendSuccess(() -> Component.literal(open
-				? "At the next start the land that exists now opens to railway lines. Lines may then run through "
-						+ "player builds. Undo with /villagerailways openland cancel before the restart."
+				? "At the next start the world is backed up, then the land that exists now opens to railway lines. "
+						+ "Lines may then run through player builds. Undo with /villagerailways openland cancel before "
+						+ "the restart."
 				: "The land stays closed to railway lines at the next start."), true);
 		return 1;
 	}
