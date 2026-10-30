@@ -66,6 +66,13 @@ Every player joining the world for the first time gets one map of the network, a
 </tr>
 </table>
 
+## Roadmap
+
+Plans for the next versions, in no set order:
+
+- More structures along the lines.
+- More styles for tunnels, bridges, stations and the lines themselves, so a line through the desert looks different from one through a snowy forest.
+
 ## Available releases
 
 | Minecraft | Loader | Download | Needs |
