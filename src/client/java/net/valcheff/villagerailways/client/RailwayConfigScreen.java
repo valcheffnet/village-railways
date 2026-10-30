@@ -148,11 +148,11 @@ public class RailwayConfigScreen extends Screen {
 			ClientPlatform.get().send(new ConfigSync.OpenLand(false));
 			return;
 		}
-		minecraft.gui.setScreen(new ConfirmScreen(yes -> {
+		minecraft.setScreen(new ConfirmScreen(yes -> {
 			if (yes) {
 				ClientPlatform.get().send(new ConfigSync.OpenLand(true));
 			}
-			minecraft.gui.setScreen(this);
+			minecraft.setScreen(this);
 		}, Component.literal("Open the existing land to lines?"), Component.literal("At the next start of the server, "
 				+ "the world is backed up, then railway lines are planned through the land that exists now, where "
 				+ "players have built. They can cut through houses, farms and redstone, and are built there as the "
@@ -171,7 +171,7 @@ public class RailwayConfigScreen extends Screen {
 		if (canEdit && values != null && !values.equals(stored)) {
 			save();
 		}
-		minecraft.gui.setScreen(parent);
+		minecraft.setScreen(parent);
 	}
 
 	private MultiLineTextWidget text(String text) {

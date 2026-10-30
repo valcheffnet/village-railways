@@ -1,7 +1,7 @@
 {
 	"pack": {
 		"description": "Village Railways: station and halt structures",
-		"min_format": 121,
-		"max_format": 121
+		"min_format": 101,
+		"max_format": 101
 	}
 }
