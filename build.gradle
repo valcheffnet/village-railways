@@ -3,7 +3,7 @@ plugins {
 }
 
 base {
-	archivesName = 'village-railways'
+	archivesName = 'village-railways-fabric'
 }
 
 repositories {
