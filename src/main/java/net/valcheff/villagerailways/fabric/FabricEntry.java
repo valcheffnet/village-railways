@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.valcheff.villagerailways.ConfigSync;
@@ -46,6 +47,8 @@ public final class FabricEntry implements ModInitializer {
 		ServerLifecycleEvents.SERVER_STARTING.register(VillageRailways::serverStarting);
 		ServerWorldEvents.LOAD.register((server, level) -> VillageRailways.levelLoaded(level));
 		ServerTickEvents.END_SERVER_TICK.register(VillageRailways::serverTick);
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+				VillageRailways.playerJoined(handler.getPlayer()));
 		ServerLifecycleEvents.BEFORE_SAVE.register((server, flush, force) -> VillageRailways.beforeSave());
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> VillageRailways.serverStopping());
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> VillageRailways.serverStopped());

@@ -10,6 +10,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -68,6 +69,11 @@ public final class NeoForgeEntry {
 			}
 		});
 		bus.addListener(ServerTickEvent.Post.class, event -> VillageRailways.serverTick(event.getServer()));
+		bus.addListener(PlayerEvent.PlayerLoggedInEvent.class, event -> {
+			if (event.getEntity() instanceof ServerPlayer player) {
+				VillageRailways.playerJoined(player);
+			}
+		});
 		bus.addListener(LevelEvent.Save.class, event -> {
 			if (event.getLevel() instanceof ServerLevel level && level.dimension() == Level.OVERWORLD) {
 				VillageRailways.beforeSave();
