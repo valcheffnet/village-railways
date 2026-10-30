@@ -1,0 +1,61 @@
+plugins {
+	id 'java'
+	id 'io.papermc.paperweight.userdev' version '2.0.0-beta.24'
+}
+
+// The Paper build shares the mod's code with the Fabric build in the parent folder: everything under src/main except
+// the Fabric entry point and the mixins, plus the Paper plugin here. The mod's data folder goes into the jar twice: as
+// it is, for the templates read from the jar, and as a data pack that the plugin registers at bootstrap, for the
+// structures the game loads. Run it from this folder.
+def root = file('..')
+def rootProps = new Properties()
+file('../gradle.properties').withInputStream { rootProps.load(it) }
+
+version = rootProps.getProperty('version')
+group = 'net.valcheff'
+
+base {
+	archivesName = 'village-railways-paper'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+sourceSets.main {
+	java {
+		srcDirs = ['src/main/java', "${root}/src/main/java"]
+		exclude '**/fabric/**', '**/mixin/**'
+	}
+	resources {
+		srcDirs = ['src/main/resources', "${root}/src/main/resources"]
+		exclude 'fabric.mod.json', '*.mixins.json'
+	}
+}
+
+repositories {
+	maven {
+		name = 'PaperMC'
+		url = 'https://repo.papermc.io/repository/maven-public/'
+	}
+}
+
+dependencies {
+	paperweight.paperDevBundle(project.paper_dev_bundle)
+}
+
+processResources {
+	inputs.property 'version', version
+	filesMatching('paper-plugin.yml') {
+		expand version: version
+	}
+	into('datapack') {
+		from 'src/main/datapack'
+		from("${root}/src/main/resources") {
+			include 'data/**'
+		}
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 25
+}
