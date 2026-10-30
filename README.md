@@ -77,18 +77,18 @@ Plans for the next versions, in no set order:
 
 | Minecraft | Loader | Download | Needs |
 |---|---|---|---|
-| 26.3 | Fabric | [village-railways-fabric-1.0.0+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+26.3.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
-| 26.3 | NeoForge | [village-railways-neoforge-1.0.0+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+26.3.jar) | NeoForge 26.3.0.90+, Java 25 |
-| 26.3 | Paper | [village-railways-paper-1.0.0+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+26.3.jar) | Paper 26.3, Java 25 |
-| 26.2 | Fabric | [village-railways-fabric-1.0.0+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+26.2.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
-| 26.2 | NeoForge | [village-railways-neoforge-1.0.0+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+26.2.jar) | NeoForge 26.2.0.93+, Java 25 |
-| 26.2 | Paper | [village-railways-paper-1.0.0+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+26.2.jar) | Paper 26.2, Java 25 |
-| 26.1 | Fabric | [village-railways-fabric-1.0.0+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+26.1.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
-| 26.1 | NeoForge | [village-railways-neoforge-1.0.0+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+26.1.jar) | NeoForge 26.1.2.124+, Java 25 |
-| 26.1 | Paper | [village-railways-paper-1.0.0+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+26.1.jar) | Paper 26.1, Java 25 |
-| 1.21.11 | Fabric | [village-railways-fabric-1.0.0+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+1.21.11.jar) | Fabric Loader 0.18+, Fabric API, Java 21 |
-| 1.21.11 | NeoForge | [village-railways-neoforge-1.0.0+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+1.21.11.jar) | NeoForge 21.11.48+, Java 21 |
-| 1.21.11 | Paper | [village-railways-paper-1.0.0+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+1.21.11.jar) | Paper 1.21.11, Java 21 |
+| 26.3 | Fabric | [village-railways-fabric-1.0.1+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-fabric-1.0.1+26.3.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
+| 26.3 | NeoForge | [village-railways-neoforge-1.0.1+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-neoforge-1.0.1+26.3.jar) | NeoForge 26.3.0.90+, Java 25 |
+| 26.3 | Paper | [village-railways-paper-1.0.1+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-paper-1.0.1+26.3.jar) | Paper 26.3, Java 25 |
+| 26.2 | Fabric | [village-railways-fabric-1.0.1+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-fabric-1.0.1+26.2.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
+| 26.2 | NeoForge | [village-railways-neoforge-1.0.1+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-neoforge-1.0.1+26.2.jar) | NeoForge 26.2.0.93+, Java 25 |
+| 26.2 | Paper | [village-railways-paper-1.0.1+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-paper-1.0.1+26.2.jar) | Paper 26.2, Java 25 |
+| 26.1 | Fabric | [village-railways-fabric-1.0.1+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-fabric-1.0.1+26.1.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
+| 26.1 | NeoForge | [village-railways-neoforge-1.0.1+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-neoforge-1.0.1+26.1.jar) | NeoForge 26.1.2.124+, Java 25 |
+| 26.1 | Paper | [village-railways-paper-1.0.1+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-paper-1.0.1+26.1.jar) | Paper 26.1, Java 25 |
+| 1.21.11 | Fabric | [village-railways-fabric-1.0.1+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-fabric-1.0.1+1.21.11.jar) | Fabric Loader 0.18+, Fabric API, Java 21 |
+| 1.21.11 | NeoForge | [village-railways-neoforge-1.0.1+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-neoforge-1.0.1+1.21.11.jar) | NeoForge 21.11.48+, Java 21 |
+| 1.21.11 | Paper | [village-railways-paper-1.0.1+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.1/village-railways-paper-1.0.1+1.21.11.jar) | Paper 1.21.11, Java 21 |
 
 Fabric and NeoForge jars go in the `mods` folder, the Paper jar in `plugins`. Mod Menu is optional on Fabric and only adds the settings screen.
 
