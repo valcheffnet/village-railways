@@ -7,7 +7,13 @@
 	"authors": [
 		"SasnycoN"
 	],
+	"contact": {
+		"homepage": "https://www.curseforge.com/minecraft/mc-mods/village-railways",
+		"sources": "https://github.com/valcheffnet/village-railways",
+		"issues": "https://discord.com/invite/X6yxJpk9Fz"
+	},
 	"license": "All Rights Reserved",
+	"icon": "assets/village_railways/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
@@ -35,5 +41,12 @@
 	},
 	"suggests": {
 		"modmenu": "*"
+	},
+	"custom": {
+		"modmenu": {
+			"links": {
+				"modmenu.discord": "https://discord.com/invite/X6yxJpk9Fz"
+			}
+		}
 	}
 }

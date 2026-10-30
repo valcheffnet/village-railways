@@ -1,0 +1,10 @@
+{
+	"description": "Where a single line turns in a tunnel: the corner and the first blocks of both ways out as one piece. The track comes in along +z and goes out along +x; corner is the x and z of the rail where it turns, rail_level the y of the rails, arm how many blocks of the line along each way out the piece holds past the corner. A section of the tunnel, from its first slice, or a portal goes on from each way out.",
+	"piece": "village_railways:tunnel/corner",
+	"corner": [
+		3,
+		3
+	],
+	"rail_level": 2,
+	"arm": 4
+}

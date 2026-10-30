@@ -197,6 +197,8 @@ public class RailwayConfigScreen extends Screen {
 			case MIN_RUN -> "Shortest straight of a slanted line: " + value + " blocks";
 			case MAX_RUN -> "Longest side step of a slanted line: " + value + " blocks";
 			case STARTER_MAP -> "Map for new players";
+			case UPDATE_CHECK -> "Check for new versions";
+			case SUPPORT_MESSAGE -> "Discord link for admins";
 			case CUT_DEPTH -> "Deepest open cut: " + value + " blocks";
 			case PILLAR_SPACING -> "Bridge pillars every " + value + " blocks";
 			case SEA_TUBES -> "Glass tubes under the sea";
@@ -212,6 +214,9 @@ public class RailwayConfigScreen extends Screen {
 					+ "least as long as the straight.";
 			case STARTER_MAP -> "A player who joins the world for the first time gets a map of the railway network "
 					+ "round where they arrive. Players who were here before get none.";
+			case UPDATE_CHECK -> "When the server starts it asks GitHub once whether a newer version is out, and tells "
+					+ "admins when they join. Nothing about the server or its players is sent.";
+			case SUPPORT_MESSAGE -> "Admins get a line with the Discord link for questions and bugs each time they join.";
 			case CUT_DEPTH -> "Where the ground is higher than this over the rail, the line goes into a tunnel.";
 			case PILLAR_SPACING -> "Blocks between the pillars of a bridge in the open.";
 			case SEA_TUBES -> "Lines cross seas in glass tubes under water. Off, they keep off open sea and bridge "

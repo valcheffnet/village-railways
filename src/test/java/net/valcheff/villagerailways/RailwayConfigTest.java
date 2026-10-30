@@ -38,11 +38,11 @@ class RailwayConfigTest {
 	}
 
 	@Test
-	void starterMapIsOnUnlessTurnedOff() throws IOException {
-		assertTrue(RailwayConfig.load(dir).starterMap());
-		Files.writeString(dir.resolve("village_railways.properties"), "starterMap=0\n");
+	void starterMapIsOffUnlessTurnedOn() throws IOException {
 		assertFalse(RailwayConfig.load(dir).starterMap());
-		assertTrue(Files.readString(dir.resolve("village_railways.properties")).contains("starterMap=0"));
+		Files.writeString(dir.resolve("village_railways.properties"), "starterMap=1\n");
+		assertTrue(RailwayConfig.load(dir).starterMap());
+		assertTrue(Files.readString(dir.resolve("village_railways.properties")).contains("starterMap=1"));
 	}
 
 	@Test
