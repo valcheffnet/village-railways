@@ -1,0 +1,8 @@
+{
+	"description": "Where a line running beside another one in a double tunnel turns away from it. The track that runs on lies along +x at z = middle, the double tunnel comes in at x = 0 and the single one goes on beyond the last slice; the other line comes in two to the right, turns away to the right at x = corner and runs on down the last rows, turned_out of them past its corner. rail_level is the y of the rails. The rails and levers are kept as they are: they make the switches. A portal or a section of the tunnel goes on from each way out.",
+	"piece": "village_railways:tunnel/junction",
+	"middle": 3,
+	"rail_level": 2,
+	"corner": 2,
+	"turned_out": 4
+}

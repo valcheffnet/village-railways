@@ -80,6 +80,20 @@ public final class LineBuilder {
 	/** Distance between the rails of a double track. */
 	private static final int DOUBLE_TRACK = 2;
 	/**
+	 * In a line's pairing, the middle of a junction on the line that runs on, times the side of the other line, and the
+	 * corner of the line that turns away there.
+	 */
+	public static final int JUNCTION_ON = 3;
+	public static final int JUNCTION_OFF = 4;
+	/** In the template planning, a block a junction covers, which no stretch takes. */
+	private static final int IN_JUNCTION = 3;
+	/** The template slice of a block of the line that turns away at a junction, which the other line's junction builds. */
+	private static final TemplateSlice COVERED = new TemplateSlice(null, null, null, 0, false);
+	/** In the template planning, a block a corner piece holds. */
+	private static final int IN_CORNER = 5;
+	/** The template slice of a block of a line that a corner piece holds, built with the piece. */
+	private static final TemplateSlice CORNER_PIECE = new TemplateSlice(null, null, null, 0, false);
+	/**
 	 * Fence posts in tunnels and lamp posts in the open, one every this many blocks; hanging lanterns in tunnels too,
 	 * half way between the posts.
 	 */
@@ -107,6 +121,8 @@ public final class LineBuilder {
 	private static final int TREE_CLEARANCE = 20;
 	/** Most blocks taken out for one tree; a huge one stops there rather than eating a forest. */
 	private static final int MAX_TREE_BLOCKS = 512;
+	/** Most blocks taken out for one post cut off from its ground, with what stands and hangs on it. */
+	private static final int MAX_FITTING_BLOCKS = 32;
 	/** One row of one to three cobwebs in a template tunnel every this many blocks along the axis. */
 	private static final int COBWEB_SPACING = 30;
 	/**
@@ -129,6 +145,9 @@ public final class LineBuilder {
 	private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 	private static final BlockState STONE = Blocks.COBBLESTONE.defaultBlockState();
 	private static final BlockState DECK = Blocks.OAK_PLANKS.defaultBlockState();
+	private static final BlockState BRICKS = Blocks.STONE_BRICKS.defaultBlockState();
+	private static final BlockState CRACKED_BRICKS = Blocks.CRACKED_STONE_BRICKS.defaultBlockState();
+	private static final BlockState MOSSY_BRICKS = Blocks.MOSSY_STONE_BRICKS.defaultBlockState();
 	private static final BlockState FENCE = Blocks.OAK_FENCE.defaultBlockState();
 	private static final BlockState RAILING = Blocks.SPRUCE_FENCE.defaultBlockState();
 	private static final BlockState COBWEB = Blocks.COBWEB.defaultBlockState();
@@ -199,16 +218,25 @@ public final class LineBuilder {
 	private final Map<TrackPlan, TrackPlan> lineOf = new HashMap<>();
 	/** For each block of each line, the tunnel template slice it is built from, or null. */
 	private final Map<TrackPlan, TemplateSlice[]> templateSlices = new HashMap<>();
+	/**
+	 * For each block of each line, whether its tunnel is lined with bricks: a straight stretch too short for a
+	 * template, or the corner of a double line.
+	 */
+	private final Map<TrackPlan, boolean[]> bricked = new HashMap<>();
+	/** For each line, the blocks where it turns in a tunnel built from the corner piece. */
+	private final Map<TrackPlan, List<Integer>> cornerPieces = new HashMap<>();
 	/** The logs of the template tunnels round this chunk, which clearing trees leaves standing; worked out once. */
 	private Set<Long> templateLogs;
 	private final Reachable reachable;
+	/** For each line, where it shares a double tunnel with another line, as {@code RailwayService} works it out. */
+	private final Map<TrackPlan, int[]> paired;
 	/** Neighbouring chunks each line was built into already, where what later features took is put back. */
 	private final Built built;
 	private boolean repairing;
 	/** The line being worked on in the current loop, and its place in {@link #plans}. */
 	private TrackPlan plan;
 	private int planIndex;
-	/** Rails of the lines in and around this chunk by position: which line, and at what height. */
+	/** Rails of the lines in and around this chunk by position: which line, at what height, and its block. */
 	private final Map<Long, int[]> rails = new HashMap<>();
 	/** What is built at each block of each line, worked out once before anything is cleared. */
 	private final Map<TrackPlan, Section[]> sections = new HashMap<>();
@@ -227,8 +255,9 @@ public final class LineBuilder {
 	private final TrackSettings settings;
 
 	private LineBuilder(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> lines, Reachable reachable,
-			Built built, TrackSettings settings) {
+			Built built, Map<TrackPlan, int[]> paired, TrackSettings settings) {
 		this.level = level;
+		this.paired = paired;
 		this.chunk = chunk;
 		this.settings = settings;
 		List<TrackPlan> all = new ArrayList<>();
@@ -250,7 +279,7 @@ public final class LineBuilder {
 				int z = line.z()[i];
 				if (x >= chunk.getMinBlockX() - reach && x <= chunk.getMaxBlockX() + reach
 						&& z >= chunk.getMinBlockZ() - reach && z <= chunk.getMaxBlockZ() + reach) {
-					rails.put(ChunkPos.pack(x, z), new int[] {p, line.track()[i]});
+					rails.put(ChunkPos.pack(x, z), new int[] {p, line.track()[i], i});
 				}
 			}
 		}
@@ -261,11 +290,12 @@ public final class LineBuilder {
 	 * side by side as a double track, neither one's walls close off the other's corridor. Trees are cleared in the chunks {@code reachable}
 	 * accepts around it: the neighbours a generating chunk may write to, or the loaded ones when a line is added to
 	 * a chunk later. In the chunks {@code built} says have a line already, its rails that later features took are laid
-	 * again.
+	 * again. Where {@code paired} says two lines run side by side in a tunnel, one of them builds the double tunnel for
+	 * both.
 	 */
 	public static void build(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> plans, Reachable reachable,
-			Built built, TrackSettings settings) {
-		new LineBuilder(level, chunk, plans, reachable, built, settings).build();
+			Built built, Map<TrackPlan, int[]> paired, TrackSettings settings) {
+		new LineBuilder(level, chunk, plans, reachable, built, paired, settings).build();
 	}
 
 	private void build() {
@@ -321,18 +351,22 @@ public final class LineBuilder {
 		}
 		secureAttachments();
 		// A feature of a chunk that generates later may spill into the edge of a built neighbour, a dungeon among them,
-		// and take rails there: they are laid again.
+		// and take rails there, or leave earth, rock or the roots and leaves of a tree in the line's way: the rails are
+		// laid again and the way cleared.
 		repairing = true;
 		for (planIndex = 0; planIndex < plans.size(); planIndex++) {
 			plan = plans.get(planIndex);
 			for (int i = 0; i < plan.length(); i++) {
 				int x = plan.x()[i];
 				int z = plan.z()[i];
-				boolean near = x >= minX && x <= maxX && z >= minZ && z <= maxZ;
-				if (near && !inChunk(x, z) && writable(x, z)
+				if (x < minX || x > maxX || z < minZ || z > maxZ) {
+					continue;
+				}
+				if (!inChunk(x, z) && writable(x, z)
 						&& !(level.getBlockState(pos.set(x, plan.track()[i], z)).getBlock() instanceof BaseRailBlock)) {
 					layRailAgain(i);
 				}
+				clearSpill(i);
 			}
 		}
 		repairing = false;
@@ -358,6 +392,9 @@ public final class LineBuilder {
 			if (pass == 2) {
 				placeTrack(i, back.getClockWise());
 				continue;
+			}
+			if (cornerPieces.getOrDefault(plan, List.of()).contains(i)) {
+				buildCorner(i);
 			}
 			buildCrossSection(i, back.getClockWise());
 			if (back.getAxis() != ahead.getAxis()) {
@@ -512,6 +549,46 @@ public final class LineBuilder {
 		}
 	}
 
+	/**
+	 * The corner piece where the current line turns at block c: its open cells cleared in the clearing pass, then its
+	 * walls sealed and its blocks placed, as a template slice's.
+	 */
+	private void buildCorner(int c) {
+		TunnelTemplate.Corner corner = TunnelTemplate.CORNER;
+		Direction along = cornerAlong(plan, c);
+		BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos();
+		for (int cx = 0; cx < corner.sizeX; cx++) {
+			for (int cy = 0; cy < corner.sizeY; cy++) {
+				for (int cz = 0; cz < corner.sizeZ; cz++) {
+					byte kind = corner.kind(cx, cy, cz);
+					if (kind == TunnelTemplate.LEAVE) {
+						continue;
+					}
+					cornerCell(plan, c, cx, cy, cz, cell);
+					int x = cell.getX();
+					int y = cell.getY();
+					int z = cell.getZ();
+					if (!inChunk(x, z)) {
+						if (lining && kind == TunnelTemplate.WALL && canWrite(x, z)
+								&& needsLining(level.getBlockState(pos.set(x, y, z)))) {
+							level.setBlock(pos, STONE, WRITE);
+						}
+						continue;
+					}
+					if (!lining) {
+						if (kind == TunnelTemplate.CLEAR) {
+							clear(x, y, z);
+						}
+					} else if (kind == TunnelTemplate.WALL) {
+						seal(x, y, z);
+					} else if (kind == TunnelTemplate.BLOCK) {
+						set(x, y, z, corner.state(cx, cy, cz, along));
+					}
+				}
+			}
+		}
+	}
+
 	/** The position of a cell of the template slice at block i of a line. */
 	private static void cell(TrackPlan line, int i, TemplateSlice slice, int across, int up, BlockPos.MutableBlockPos out) {
 		Direction right = slice.forward().getClockWise();
@@ -550,10 +627,28 @@ public final class LineBuilder {
 					}
 				}
 				TemplateSlice[] slices = templateSlices(line);
+				TunnelTemplate.Corner corner = TunnelTemplate.CORNER;
+				for (int c : cornerPieces.getOrDefault(line, List.of())) {
+					if (line.x()[c] < minX - 8 || line.x()[c] > maxX + 8 || line.z()[c] < minZ - 8
+							|| line.z()[c] > maxZ + 8) {
+						continue;
+					}
+					Direction along = cornerAlong(line, c);
+					for (int x = 0; x < corner.sizeX; x++) {
+						for (int y = 0; y < corner.sizeY; y++) {
+							for (int z = 0; z < corner.sizeZ; z++) {
+								if (corner.kind(x, y, z) == TunnelTemplate.BLOCK
+										&& corner.state(x, y, z, along).is(BlockTags.LOGS)) {
+									templateLogs.add(cornerCell(line, c, x, y, z, cell).asLong());
+								}
+							}
+						}
+					}
+				}
 				for (int i = 0; i < line.length(); i++) {
 					TemplateSlice slice = slices[i];
-					if (slice == null || line.x()[i] < minX - 8 || line.x()[i] > maxX + 8 || line.z()[i] < minZ - 8
-							|| line.z()[i] > maxZ + 8) {
+					if (slice == null || slice == COVERED || slice == CORNER_PIECE || line.x()[i] < minX - 8
+							|| line.x()[i] > maxX + 8 || line.z()[i] < minZ - 8 || line.z()[i] > maxZ + 8) {
 						continue;
 					}
 					TunnelTemplate template = slice.template();
@@ -608,18 +703,34 @@ public final class LineBuilder {
 
 	/**
 	 * What block i of the current line builds from a tunnel template, or null. A second rail leaves its line's double
-	 * tunnel to the line. A cave bridge's deck and frames go before the template.
+	 * tunnel to the line, and a line paired with another leaves their double tunnel to the one that builds it. A cave
+	 * bridge's deck and frames go before the template.
 	 */
 	private Templated templated(int i) {
 		TrackPlan line = lineOf.get(plan);
 		TemplateSlice slice = line == null ? templateSlices(plan)[i] : templateSlices(line)[plan.beside()[i]];
+		if (line == null && slice == null) {
+			int[] pairing = paired.get(plan);
+			if (pairing != null && Math.abs(pairing[i]) == 2) {
+				return pairedTemplate(i, pairing[i] / 2);
+			}
+		}
 		if (slice == null) {
 			return null;
 		}
-		// The template's cells run to the right, the cross section's offsets to the left.
+		if (slice == COVERED || slice == CORNER_PIECE) {
+			// The other line's junction builds this line's blocks there, or the corner piece does.
+			return line == null ? new Templated(slice, false, -BuildState.REACH, BuildState.REACH) : null;
+		}
+		// The template's cells run to the right, the cross section's offsets to the left; a junction may run the other
+		// way from the line's blocks, which turns them round.
 		int low = slice.middle() - slice.template().maxAcross;
 		int high = slice.middle() - slice.template().minAcross;
 		if (line == null) {
+			if (crossSide(plan, i) != slice.forward().getCounterClockWise()) {
+				low = slice.template().minAcross - slice.middle();
+				high = slice.template().maxAcross - slice.middle();
+			}
 			return slice.porch() || !isDeck(i) && !hasFrame(i) ? new Templated(slice, true, low, high) : null;
 		}
 		int at = plan.beside()[i];
@@ -627,6 +738,50 @@ public final class LineBuilder {
 			return null;
 		}
 		return new Templated(slice, false, low - DOUBLE_TRACK, high - DOUBLE_TRACK);
+	}
+
+	/**
+	 * The double tunnel at block i of the current line where the line beside it, on {@code side} (1 left, -1 right),
+	 * builds it: this line leaves the template's cells alone, as a second rail does. Null where that line builds no
+	 * template there.
+	 */
+	private Templated pairedTemplate(int i, int side) {
+		Direction toward = crossSide(plan, i);
+		int across = DOUBLE_TRACK * side;
+		int[] other = rails.get(ChunkPos.pack(plan.x()[i] + toward.getStepX() * across,
+				plan.z()[i] + toward.getStepZ() * across));
+		if (other == null) {
+			return null;
+		}
+		TrackPlan builder = plans.get(other[0]);
+		int at = other[2];
+		TemplateSlice slice = templateSlices(builder)[at];
+		if (slice == null || slice == COVERED || slice == CORNER_PIECE || slice.porch()
+				|| onLine(builder, j -> isDeck(j) || hasFrame(j), at)) {
+			return null;
+		}
+		// The template's cells run to the right of the line that builds it; in this line's cross section that line
+		// lies {@code across} to the left, and its left is this line's left, or its right where the two run opposite.
+		int low = slice.middle() - slice.template().maxAcross;
+		int high = slice.middle() - slice.template().minAcross;
+		return crossSide(builder, at) == toward ? new Templated(slice, false, across + low, across + high)
+				: new Templated(slice, false, across - high, across - low);
+	}
+
+	/** Whether block i of the current line lies in a junction, its own or the other line's. */
+	private boolean inJunction(int i) {
+		if (lineOf.containsKey(plan) || section(i) != Section.TUNNEL) {
+			return false;
+		}
+		TemplateSlice slice = templateSlices(plan)[i];
+		return slice == COVERED || slice != null && (slice.template() == TunnelTemplate.JUNCTION_LEFT
+				|| slice.template() == TunnelTemplate.JUNCTION_RIGHT);
+	}
+
+	/** The left of a line at block i, the way the offsets of its cross section count. */
+	private static Direction crossSide(TrackPlan line, int i) {
+		Direction back = i > 0 ? line.direction(i, i - 1) : line.direction(i, i + 1).getOpposite();
+		return back.getClockWise();
 	}
 
 	/** Runs a test on block i of another line being built, as the current line. */
@@ -647,10 +802,20 @@ public final class LineBuilder {
 		return templateSlices.computeIfAbsent(line, this::planTemplates);
 	}
 
+	/** Whether the tunnel at block i of the current line is lined with bricks. */
+	private boolean isBricked(int i) {
+		TrackPlan line = lineOf.getOrDefault(plan, plan);
+		int at = line == plan ? i : plan.beside()[i];
+		templateSlices(line);
+		boolean[] lined = bricked.get(line);
+		return lined != null && lined[at];
+	}
+
 	/**
-	 * The template slices of a line, worked out from its plan alone so every chunk agrees. A planned tunnel is built
-	 * from templates in stretches between its portals, corners and ramps: from the double template where a second rail
-	 * runs beside the line, the single one elsewhere. A stretch opens with the entrance, at a portal with its porch in
+	 * The template slices of a line, worked out from its plan and its pairing alone so every chunk agrees. A planned
+	 * tunnel is built from templates in stretches between its portals, corners and ramps: from the double template where
+	 * a second rail or a paired line runs beside the line, the single one elsewhere, and none where the line beside
+	 * builds the double one. A stretch opens with the entrance, at a portal with its porch in
 	 * front, then the two sections take turns, the first slice of the next one closes them, and the exit ends the
 	 * stretch. Whole sections seldom fit: at a portal the stretch reaches a few blocks out into the cut to make them
 	 * fit, else it ends early and the blocks left over are built as an ordinary tunnel.
@@ -660,45 +825,166 @@ public final class LineBuilder {
 		if (lineOf.containsKey(line)) {
 			return slices;
 		}
-		boolean[] doubled = new boolean[line.length()];
+		// The side of the other rail of a double tunnel: 1 on the left, -1 on the right, 0 single, 2 none of this line's.
+		int[] doubled = new int[line.length()];
+		// Where a second rail of the line's own runs beside it, whose corners lie two blocks off the line's.
+		boolean[] secondBeside = new boolean[line.length()];
+		int[] pairing = paired.get(line);
+		if (pairing != null) {
+			for (int i = 0; i < line.length(); i++) {
+				doubled[i] = Math.abs(pairing[i]) == 1 ? pairing[i] : Math.abs(pairing[i]) == 2 ? 2 : 0;
+			}
+		}
 		for (TrackPlan second : line.seconds()) {
 			// Not where it branches off and joins.
 			for (int p = 2; p < second.length() - 2; p++) {
-				doubled[second.beside()[p]] = true;
+				doubled[second.beside()[p]] = 1;
+				secondBeside[second.beside()[p]] = true;
 			}
 		}
+		if (pairing != null) {
+			for (int i = 0; i < line.length(); i++) {
+				if (Math.abs(pairing[i]) == JUNCTION_ON) {
+					layJunction(line, slices, doubled, pairing, i, pairing[i] / JUNCTION_ON);
+				} else if (pairing[i] == JUNCTION_OFF) {
+					// Before its corner the line runs beside the other one, after it away from it.
+					int away = i > 0 && pairing[i - 1] != 0 ? 1 : -1;
+					for (int t = -TunnelTemplate.JUNCTION_CORNER; t <= TunnelTemplate.JUNCTION_TURNED_OUT; t++) {
+						int j = i + t * away;
+						if (j >= 0 && j < line.length()) {
+							slices[j] = COVERED;
+							doubled[j] = IN_JUNCTION;
+						}
+					}
+					layExitAfter(line, slices, doubled, i + TunnelTemplate.JUNCTION_TURNED_OUT * away, away);
+				}
+			}
+		}
+		List<Integer> corners = new ArrayList<>();
+		for (int c = 0; c < line.length(); c++) {
+			if (!line.corner()[c] || !fitsCorner(line, c, slices, doubled, secondBeside)) {
+				continue;
+			}
+			int arm = TunnelTemplate.CORNER.arm;
+			for (int j = c - arm; j <= c + arm; j++) {
+				slices[j] = CORNER_PIECE;
+				doubled[j] = IN_CORNER;
+			}
+			corners.add(c);
+			layExitAfter(line, slices, doubled, c - arm, -1);
+			layExitAfter(line, slices, doubled, c + arm, 1);
+		}
+		cornerPieces.put(line, corners);
 		for (int i = 0; i < line.length(); i++) {
-			if (!inTemplate(line, i, doubled)) {
+			if (!inTemplate(line, i, doubled, secondBeside)) {
 				continue;
 			}
 			int last = i;
-			while (last + 1 < line.length() && inTemplate(line, last + 1, doubled) && doubled[last + 1] == doubled[i]) {
+			while (last + 1 < line.length() && inTemplate(line, last + 1, doubled, secondBeside)
+					&& doubled[last + 1] == doubled[i]) {
 				last++;
 			}
-			layStretch(line, slices, i, last, doubled);
+			layStretch(line, slices, i, last, doubled, secondBeside);
 			i = last;
 		}
+		boolean[] doubleCorner = new boolean[line.length()];
+		int reach = DOUBLE_TRACK + 2;
+		for (int c = 0; c < line.length(); c++) {
+			if (!line.corner()[c] || isPiece(doubled[c])) {
+				continue;
+			}
+			boolean twin = false;
+			for (int j = Math.max(0, c - reach); j <= Math.min(line.length() - 1, c + reach); j++) {
+				twin |= doubled[j] != 0 && !isPiece(doubled[j]);
+			}
+			for (int j = Math.max(0, c - reach); twin && j <= Math.min(line.length() - 1, c + reach); j++) {
+				doubleCorner[j] = true;
+			}
+		}
+		boolean[] lined = new boolean[line.length()];
+		for (int i = 0; i < line.length(); i++) {
+			lined[i] = slices[i] == null && (inTemplate(line, i, doubled, secondBeside)
+					|| doubleCorner[i] && !isPiece(doubled[i]) && plainTunnel(line, i));
+		}
+		bricked.put(line, lined);
 		return slices;
 	}
 
 	/**
 	 * Whether block i of a line can be built from a template: in a planned tunnel, clear of corners by as far as the
-	 * cross section of a corner reaches (and the second rail's corners, two blocks off), off ramps and the blocks
-	 * beside them, which keep the ramp's high tunnel and its stepped ceiling, and out of the end of a tube.
+	 * cross section of a corner reaches (and a second rail's corners, two blocks off), off ramps and the blocks
+	 * beside them, which keep the ramp's high tunnel and its stepped ceiling, and out of the end of a tube; not where
+	 * the line beside builds the double tunnel, nor in a junction, whose corner the tunnels on either side meet.
 	 */
-	private static boolean inTemplate(TrackPlan line, int i, boolean[] doubled) {
+	private static boolean inTemplate(TrackPlan line, int i, int[] doubled, boolean[] secondBeside) {
+		if (doubled[i] == 2 || isPiece(doubled[i]) || !plainTunnel(line, i)) {
+			return false;
+		}
+		int reach = secondBeside[i] ? DOUBLE_TRACK + 2 : 2;
+		for (int j = Math.max(0, i - reach); j <= Math.min(line.length() - 1, i + reach); j++) {
+			if (line.corner()[j] && !isPiece(doubled[j])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Whether a block is held by a junction or a corner piece in the template planning. */
+	private static boolean isPiece(int doubled) {
+		return doubled == IN_JUNCTION || doubled == IN_CORNER;
+	}
+
+	/**
+	 * Whether the corner piece fits where a line turns at block c: a single track in a planned tunnel, level and
+	 * straight along the piece's arms and a block past each, with nothing else laid there.
+	 */
+	private static boolean fitsCorner(TrackPlan line, int c, TemplateSlice[] slices, int[] doubled,
+			boolean[] secondBeside) {
+		int arm = TunnelTemplate.CORNER.arm;
+		if (c - arm - 1 < 1 || c + arm + 1 > line.length() - 2) {
+			return false;
+		}
+		for (int j = c - arm - 1; j <= c + arm + 1; j++) {
+			if (j != c && line.corner()[j] || slices[j] != null || doubled[j] != 0 || secondBeside[j]
+					|| line.track()[j] != line.track()[c]) {
+				return false;
+			}
+		}
+		for (int j = c - arm; j <= c + arm; j++) {
+			if (!plainTunnel(line, j)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** The way the corner piece's way out along +x runs where a line turns at block c. */
+	private static Direction cornerAlong(TrackPlan line, int c) {
+		Direction back = line.direction(c, c - 1);
+		Direction ahead = line.direction(c, c + 1);
+		return back.getClockWise() == ahead ? back : ahead;
+	}
+
+	/** The position of a cell of the corner piece where a line turns at block c. */
+	private static BlockPos.MutableBlockPos cornerCell(TrackPlan line, int c, int x, int y, int z,
+			BlockPos.MutableBlockPos out) {
+		TunnelTemplate.Corner corner = TunnelTemplate.CORNER;
+		Direction along = cornerAlong(line, c);
+		Direction right = along.getClockWise();
+		int ahead = x - corner.railX;
+		int across = z - corner.railZ;
+		return out.set(line.x()[c] + along.getStepX() * ahead + right.getStepX() * across,
+				line.track()[c] + y - corner.railLevel, line.z()[c] + along.getStepZ() * ahead + right.getStepZ() * across);
+	}
+
+	/** Whether block i of a line lies in a planned tunnel, off ramps and the blocks beside them, out of a tube's end. */
+	private static boolean plainTunnel(TrackPlan line, int i) {
 		if (i < 1 || i > line.length() - 2 || line.sections()[i] != Section.TUNNEL) {
 			return false;
 		}
 		for (int j = Math.max(0, i - TubeShape.RADIUS - 1); j <= Math.min(line.length() - 1, i + TubeShape.RADIUS + 1);
 				j++) {
 			if (line.sections()[j] == Section.TUBE) {
-				return false;
-			}
-		}
-		int reach = doubled[i] ? DOUBLE_TRACK + 2 : 2;
-		for (int j = Math.max(0, i - reach); j <= Math.min(line.length() - 1, i + reach); j++) {
-			if (line.corner()[j]) {
 				return false;
 			}
 		}
@@ -710,11 +996,66 @@ public final class LineBuilder {
 		return true;
 	}
 
-	private static void layStretch(TrackPlan line, TemplateSlice[] slices, int first, int last, boolean[] doubled) {
-		TunnelTemplate template = doubled[first] ? TunnelTemplate.DOUBLE : TunnelTemplate.SINGLE;
-		// The double template's middle lies between the rails, the second rail being on the left.
-		int middle = doubled[first] ? DOUBLE_TRACK / 2 : 0;
+	/**
+	 * The junction at block k of a line that runs on, beside the corner where the line beside it turns away on
+	 * {@code side} (1 left, -1 right of the way the blocks count): its slices from the double tunnel's side to the single
+	 * one's.
+	 */
+	private static void layJunction(TrackPlan line, TemplateSlice[] slices, int[] doubled, int[] pairing, int k,
+			int side) {
+		// The double tunnel lies where the other line still runs beside this one.
+		int on = k > 0 && pairing[k - 1] != 0 ? 1 : -1;
+		int size = TunnelTemplate.JUNCTION_RIGHT.entrance.size();
+		int first = k - TunnelTemplate.JUNCTION_CORNER * on;
+		int last = first + (size - 1) * on;
+		if (Math.min(first, last) < 1 || Math.max(first, last) > line.length() - 2) {
+			return;
+		}
+		Direction forward = line.direction(k, k + on);
+		TunnelTemplate template = side * on > 0 ? TunnelTemplate.JUNCTION_LEFT : TunnelTemplate.JUNCTION_RIGHT;
+		for (int t = 0; t < size; t++) {
+			int j = first + t * on;
+			slices[j] = new TemplateSlice(template, template.entrance.get(t), forward, 0, false);
+			doubled[j] = IN_JUNCTION;
+		}
+		layExitAfter(line, slices, doubled, last, on);
+	}
+
+	/**
+	 * Where a way out of a junction, its last block {@code end}, leaves the tunnel at once, the single tunnel's exit
+	 * stands right against the junction, reaching out over the track in front.
+	 */
+	private static void layExitAfter(TrackPlan line, TemplateSlice[] slices, int[] doubled, int end, int step) {
+		int next = end + step;
+		TunnelTemplate template = TunnelTemplate.SINGLE;
+		int count = template.exit.size();
+		if (next < 1 || next > line.length() - 2 || line.sections()[next] == Section.TUNNEL
+				|| !straightOutside(line, slices, end, step, count)) {
+			return;
+		}
+		Direction forward = line.direction(end, next);
+		for (int k = 0; k < count; k++) {
+			int j = end + step * (k + 1);
+			slices[j] = new TemplateSlice(template, template.exit.get(k), forward, 0, k >= template.inside());
+			doubled[j] = IN_JUNCTION;
+		}
+	}
+
+	private static void layStretch(TrackPlan line, TemplateSlice[] slices, int first, int last, int[] doubled,
+			boolean[] secondBeside) {
+		TunnelTemplate template = doubled[first] != 0 ? TunnelTemplate.DOUBLE : TunnelTemplate.SINGLE;
+		// The double template's middle lies between the rails, on the side of the other rail.
+		int middle = doubled[first] * DOUBLE_TRACK / 2;
 		Direction forward = line.direction(first, first + 1);
+		boolean jointIn = isPiece(doubled[first - 1]);
+		boolean jointOut = isPiece(doubled[last + 1]);
+		if (jointIn || jointOut) {
+			// The ways out of a corner piece end like the last slice of a section, a junction's like the first.
+			int leadIn = jointIn && doubled[first - 1] == IN_JUNCTION ? 1 : 0;
+			int leadOut = jointOut && doubled[last + 1] == IN_JUNCTION ? 1 : 0;
+			layJoined(line, slices, first, last, jointIn, jointOut, template, middle, leadIn, leadOut);
+			return;
+		}
 		int inside = template.inside();
 		int period = template.period();
 		if (last - first + 1 < 2 * inside + 1) {
@@ -725,9 +1066,9 @@ public final class LineBuilder {
 		int spare = Math.floorMod(last - first + 1 - 2 * inside - 1, period);
 		if (spare != 0) {
 			int more = period - spare;
-			if (portalOut && fitsOutside(line, slices, last, 1, more + template.outside, doubled)) {
+			if (portalOut && fitsOutside(line, slices, last, 1, more + template.outside, doubled, secondBeside)) {
 				last += more;
-			} else if (portalIn && fitsOutside(line, slices, first, -1, more + template.outside, doubled)) {
+			} else if (portalIn && fitsOutside(line, slices, first, -1, more + template.outside, doubled, secondBeside)) {
 				first -= more;
 			} else {
 				last -= spare;
@@ -748,13 +1089,13 @@ public final class LineBuilder {
 		for (int k = 0; k < inside; k++) {
 			slices[at++] = new TemplateSlice(template, template.exit.get(k), forward, middle, false);
 		}
-		if (portalIn && fitsOutside(line, slices, first, -1, template.outside, doubled)) {
+		if (portalIn && fitsOutside(line, slices, first, -1, template.outside, doubled, secondBeside)) {
 			for (int k = 0; k < template.outside; k++) {
 				slices[first - template.outside + k] = new TemplateSlice(template, template.entrance.get(k), forward, middle,
 						true);
 			}
 		}
-		if (portalOut && fitsOutside(line, slices, last, 1, template.outside, doubled)) {
+		if (portalOut && fitsOutside(line, slices, last, 1, template.outside, doubled, secondBeside)) {
 			for (int k = 0; k < template.outside; k++) {
 				slices[last + 1 + k] = new TemplateSlice(template, template.exit.get(inside + k), forward, middle, true);
 			}
@@ -762,12 +1103,133 @@ public final class LineBuilder {
 	}
 
 	/**
+	 * A stretch that meets a junction or a corner piece at one end. On the double tunnel's side of a junction it is laid
+	 * from the portal towards the junction, ending in a whole section against it; on a single tunnel's side it is laid
+	 * from the piece out, after a junction from the second slice of the first section, whose first one the junction's
+	 * last slice stands in for (a lead of 1), after a corner piece from the first (a lead of 0). At the portal end the
+	 * portal reaches out over the track in front to take what is left over, or where it cannot the section there is cut
+	 * short; with no room for sections the portal stands right against the piece. Between two pieces the sections run
+	 * from one to the other, from a junction's end where one is a junction.
+	 */
+	private static void layJoined(TrackPlan line, TemplateSlice[] slices, int first, int last, boolean jointIn,
+			boolean jointOut, TunnelTemplate template, int middle, int leadIn, int leadOut) {
+		int inside = template.inside();
+		int period = template.period();
+		if (jointIn && jointOut) {
+			int step = leadOut > leadIn ? -1 : 1;
+			int from = step > 0 ? first : last;
+			Direction forward = line.direction(from, from + step);
+			int start = step > 0 ? leadIn : leadOut;
+			for (int k = 0; k <= last - first; k++) {
+				slices[from + step * k] = sectionSlice(template, start + k, forward, step * middle);
+			}
+			return;
+		}
+		boolean intoJunction = template == TunnelTemplate.DOUBLE;
+		// The slices are laid from {@code from} to {@code to}, facing the way they run; the portal stands before
+		// {@code from} on the way into the junction, after {@code to} on the way out of it.
+		int step = intoJunction == jointOut ? 1 : -1;
+		int from = step > 0 ? first : last;
+		int to = step > 0 ? last : first;
+		Direction forward = line.direction(from, from + step);
+		int facing = step * middle;
+		int length = (to - from) * step + 1;
+		if (length < inside) {
+			int lacking = inside - length;
+			if (intoJunction && straightOutside(line, slices, from, -step, lacking)) {
+				from -= step * lacking;
+			} else if (!intoJunction && straightOutside(line, slices, to, step, lacking)) {
+				to += step * lacking;
+			} else {
+				return;
+			}
+			length = inside;
+		}
+		int count = length - inside;
+		int start = 0;
+		if (intoJunction) {
+			// Whole sections against the junction; the one at the portal is cut short unless the portal reaches out.
+			int more = Math.floorMod(-count, period);
+			if (more > 0 && straightOutside(line, slices, from, -step, more + template.outside)) {
+				from -= step * more;
+				count += more;
+			} else {
+				start = more;
+			}
+		} else if (count > 0) {
+			// After a junction its last slice stands in for the first slice of the first section, so the sections run on
+			// from the second one; after a corner piece they start whole. The last is closed by the first slice of the
+			// next before the exit.
+			start = jointIn ? leadIn : leadOut;
+			int more = Math.floorMod(1 - start - count, period);
+			if (more > 0 && straightOutside(line, slices, to, step, more + template.outside)) {
+				to += step * more;
+				count += more;
+			}
+		}
+		int at = from;
+		if (intoJunction) {
+			for (int k = template.outside; k < template.entrance.size(); k++, at += step) {
+				slices[at] = new TemplateSlice(template, template.entrance.get(k), forward, facing, false);
+			}
+		}
+		for (int n = start; n < start + count; n++, at += step) {
+			slices[at] = sectionSlice(template, n, forward, facing);
+		}
+		if (!intoJunction) {
+			for (int k = 0; k < inside; k++, at += step) {
+				slices[at] = new TemplateSlice(template, template.exit.get(k), forward, facing, false);
+			}
+		}
+		if (intoJunction && straightOutside(line, slices, from, -step, template.outside)) {
+			for (int k = 0; k < template.outside; k++) {
+				slices[from - step * (template.outside - k)] = new TemplateSlice(template, template.entrance.get(k), forward,
+						facing, true);
+			}
+		}
+		if (!intoJunction && straightOutside(line, slices, to, step, template.outside)) {
+			for (int k = 0; k < template.outside; k++) {
+				slices[to + step * (k + 1)] = new TemplateSlice(template, template.exit.get(inside + k), forward, facing,
+						true);
+			}
+		}
+	}
+
+	/** Slice n of the sections taking turns along a tunnel, counted from the first slice of a section A. */
+	private static TemplateSlice sectionSlice(TunnelTemplate template, int n, Direction forward, int middle) {
+		int period = template.period();
+		List<TunnelTemplate.Slice> section = n / period % 2 == 0 ? template.sectionA : template.sectionB;
+		return new TemplateSlice(template, section.get(n % period), forward, middle, false);
+	}
+
+	/**
+	 * Whether the {@code count} blocks beyond block {@code from} of a line, in direction {@code step}, run on straight and
+	 * level with it, so a portal may stand there: clear of corners but for one two blocks off, of halts and of other
+	 * slices.
+	 */
+	private static boolean straightOutside(TrackPlan line, TemplateSlice[] slices, int from, int step, int count) {
+		for (int k = 1; k <= count; k++) {
+			int j = from + step * k;
+			if (j < 1 || j > line.length() - 2 || slices[j] != null || line.track()[j] != line.track()[from]
+					|| line.corner()[j - 1] || line.corner()[j] || line.corner()[j + 1]) {
+				return false;
+			}
+			for (int halt : line.halts()) {
+				if (Math.abs(halt - j) <= HaltPlanner.HALF_LENGTH + 1) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Whether the {@code count} blocks beyond block {@code from} of a line, in direction {@code step}, are open ground
 	 * a portal can stand on or reach out over: level and straight like the stretch, clear of halts and of other slices.
 	 */
 	private static boolean fitsOutside(TrackPlan line, TemplateSlice[] slices, int from, int step, int count,
-			boolean[] doubled) {
-		int reach = doubled[from] ? DOUBLE_TRACK + 2 : 2;
+			int[] doubled, boolean[] secondBeside) {
+		int reach = secondBeside[from] ? DOUBLE_TRACK + 2 : 2;
 		for (int k = 1; k <= count; k++) {
 			int j = from + step * k;
 			if (j < 1 || j > line.length() - 2 || slices[j] != null || line.track()[j] != line.track()[from]
@@ -822,6 +1284,8 @@ public final class LineBuilder {
 		// On a ramp the tunnel is a block higher, so a rider going down does not meet the ceiling ahead.
 		boolean ramp = isRamp(i);
 		int height = ramp ? 5 : 3;
+		// A straight stretch too short for a template, and the corner of a double line, are lined with stone bricks.
+		boolean bricks = lining && isBricked(i);
 		if (distance <= 1) {
 			for (int y = track; y < track + height; y++) {
 				clear(x, y, z);
@@ -837,7 +1301,11 @@ public final class LineBuilder {
 			} else {
 				seal(x, track - 1, z);
 			}
-			seal(x, track + height, z);
+			if (bricks) {
+				brick(x, track + height, z);
+			} else {
+				seal(x, track + height, z);
+			}
 			if (ramp && level.getBlockState(pos.set(x, track + height, z)).isSolid()) {
 				// The top block becomes an upside-down stair that steps down towards the lower end of the ramp.
 				set(x, track + height - 1, z, Blocks.COBBLESTONE_STAIRS.defaultBlockState()
@@ -853,8 +1321,23 @@ public final class LineBuilder {
 			}
 		} else if (distance == 2 && lining) {
 			for (int y = track - 1; y <= track + height; y++) {
-				seal(x, y, z);
+				if (bricks && y >= track) {
+					brick(x, y, z);
+				} else {
+					seal(x, y, z);
+				}
 			}
+		}
+	}
+
+	/**
+	 * A wall or ceiling block of a tunnel lined with bricks: stone bricks over the rock, some cracked and some mossy as
+	 * in an old stronghold, leaving caves open.
+	 */
+	private void brick(int x, int y, int z) {
+		if (!carved.contains(BlockPos.asLong(x, y, z)) && !level.getBlockState(pos.set(x, y, z)).isAir()) {
+			int roll = Math.floorMod(mix(x, mix(y, z)), 100);
+			set(x, y, z, roll < 15 ? CRACKED_BRICKS : roll < 27 ? MOSSY_BRICKS : BRICKS);
 		}
 	}
 
@@ -889,10 +1372,18 @@ public final class LineBuilder {
 		for (int y = track; y <= track + 2; y++) {
 			clear(x, y, z);
 		}
+		boolean underground = isUnderground(x, z, track);
+		if (!underground) {
+			// A bank higher than the bridge, where the planned ground dips but the real one does not, is cut back as in
+			// a cut, so none of it hangs over the track.
+			for (int y = track + 3; y < Math.min(surface(x, z, track), cutTop(i)); y++) {
+				clear(x, y, z);
+			}
+		}
 		if (!lining) {
 			return;
 		}
-		if (isUnderground(x, z, track)) {
+		if (underground) {
 			set(x, track - 1, z, DECK);
 			support(i, x, z, track, distance);
 			return;
@@ -921,6 +1412,10 @@ public final class LineBuilder {
 	}
 
 	private void placeTrack(int i, Direction side) {
+		if (inJunction(i)) {
+			// The junction's own rails and levers make its switches.
+			return;
+		}
 		int x = plan.x()[i];
 		int z = plan.z()[i];
 		int track = plan.track()[i];
@@ -1851,11 +2346,11 @@ public final class LineBuilder {
 				|| shape == RailShape.SOUTH_WEST;
 	}
 
-	/** First free y above the solid ground of a column, ignoring trees and fluids. */
+	/** First free y above the solid ground of a column, ignoring trees, posts and fluids. */
 	private int surface(int x, int z, int track) {
 		for (int y = track + SCAN_UP; y > track - SCAN_DOWN; y--) {
 			BlockState state = level.getBlockState(pos.set(x, y, z));
-			if (state.isSolid() && !isPlant(state)) {
+			if (state.isSolid() && !isPlant(state) && !isFitting(state)) {
 				return y + 1;
 			}
 		}
@@ -2009,10 +2504,49 @@ public final class LineBuilder {
 				removeStalk(x, above, z);
 				return;
 			}
+			if (isFitting(state) && !isHanging(state)) {
+				removeFitting(at);
+				return;
+			}
 			if (state.canSurvive(level, at)) {
 				return;
 			}
 			level.setBlock(at, AIR, WRITE);
+		}
+	}
+
+	/**
+	 * Posts, railings and what goes on them, such as the lamp posts and signs of road mods: no ground for a line, and
+	 * the game leaves them up in the air when the ground under them is cut away.
+	 */
+	private static boolean isFitting(BlockState state) {
+		return state.is(BlockTags.FENCES) || state.is(BlockTags.WALLS) || state.is(BlockTags.FENCE_GATES)
+				|| state.is(BlockTags.TRAPDOORS) || state.is(BlockTags.ALL_SIGNS) || state.is(BlockTags.BARS)
+				|| state.is(BlockTags.CHAINS) || state.is(BlockTags.LANTERNS) || state.is(Blocks.REDSTONE_LAMP)
+				|| state.is(Blocks.DAYLIGHT_DETECTOR);
+	}
+
+	/** A lantern or chain hanging from above, which what it hangs from holds up. */
+	private static boolean isHanging(BlockState state) {
+		return state.is(BlockTags.CHAINS) || state.is(BlockTags.LANTERNS) && state.getValue(LanternBlock.HANGING);
+	}
+
+	/** Takes out a post whose ground was cut away, with everything on it and hanging from it. */
+	private void removeFitting(BlockPos start) {
+		Deque<BlockPos> queue = new ArrayDeque<>();
+		Set<BlockPos> seen = new HashSet<>();
+		queue.add(start);
+		seen.add(start);
+		while (!queue.isEmpty() && seen.size() <= MAX_FITTING_BLOCKS) {
+			BlockPos at = queue.poll();
+			level.setBlock(at, AIR, WRITE);
+			for (Direction direction : Direction.values()) {
+				BlockPos next = at.relative(direction);
+				if (canWrite(next.getX(), next.getZ()) && !seen.contains(next) && isFitting(level.getBlockState(next))) {
+					seen.add(next);
+					queue.add(next);
+				}
+			}
 		}
 	}
 
@@ -2166,6 +2700,37 @@ public final class LineBuilder {
 
 	private boolean writable(int x, int z) {
 		return inChunk(x, z) || repairing && canWrite(x, z) && built.test(x >> 4, z >> 4, lineOf.getOrDefault(plan, plan));
+	}
+
+	/**
+	 * Takes what a later feature spilled into the way of block i in a built neighbour out again: earth, rock, sand,
+	 * gravel, logs and leaves on the rail and the free block each side, up to the height a rider needs.
+	 */
+	private void clearSpill(int i) {
+		if (section(i) == Section.TUBE) {
+			return;
+		}
+		Direction back = i > 0 ? plan.direction(i, i - 1) : plan.direction(i, i + 1).getOpposite();
+		Direction side = back.getClockWise();
+		int track = plan.track()[i];
+		for (int offset = -1; offset <= 1; offset++) {
+			int x = plan.x()[i] + side.getStepX() * offset;
+			int z = plan.z()[i] + side.getStepZ() * offset;
+			if (inChunk(x, z) || !writable(x, z)) {
+				continue;
+			}
+			for (int y = offset == 0 ? track + 1 : track; y <= track + 2; y++) {
+				if (isSpill(level.getBlockState(pos.set(x, y, z)))) {
+					set(x, y, z, AIR);
+				}
+			}
+		}
+	}
+
+	private static boolean isSpill(BlockState state) {
+		return state.is(BlockTags.DIRT) || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.SAND)
+				|| state.is(Blocks.GRAVEL) || state.is(Blocks.CLAY) || state.is(BlockTags.LOGS)
+				|| state.is(BlockTags.LEAVES) || state.is(Blocks.MANGROVE_ROOTS);
 	}
 
 	/** Lays the rail of block i again where it went missing: room above it, ground under it, the rail and its torch. */
