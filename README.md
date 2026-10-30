@@ -57,7 +57,7 @@ If you want lines through the old land too, a server admin, or the player in a s
 
 ## Maps
 
-`/villagerailways mapitem` gives you a vanilla map of the network that reaches much farther than a normal map would. `/villagerailways mapwall` gives you a set of them to hang as a wall in item frames, the same kind the large stations have.
+Every player joining the world for the first time gets one map of the network, and only that once. `/villagerailways mapitem` gives you a vanilla map of the network that reaches much farther than a normal map would. `/villagerailways mapwall` gives you a set of them to hang as a wall in item frames, the same kind the large stations have.
 
 <table>
 <tr>
@@ -66,17 +66,28 @@ If you want lines through the old land too, a server admin, or the player in a s
 </tr>
 </table>
 
-## Install
+## Available releases
 
-There is a jar for Fabric, one for NeoForge and a plugin for Paper, all for Minecraft 26.3:
+| Minecraft | Loader | Download | Needs |
+|---|---|---|---|
+| 26.3 | Fabric | [village-railways-fabric-1.0.0+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+26.3.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
+| 26.3 | NeoForge | [village-railways-neoforge-1.0.0+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+26.3.jar) | NeoForge 26.3.0.90+, Java 25 |
+| 26.3 | Paper | [village-railways-paper-1.0.0+26.3.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+26.3.jar) | Paper 26.3, Java 25 |
+| 26.2 | Fabric | [village-railways-fabric-1.0.0+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+26.2.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
+| 26.2 | NeoForge | [village-railways-neoforge-1.0.0+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+26.2.jar) | NeoForge 26.2.0.93+, Java 25 |
+| 26.2 | Paper | [village-railways-paper-1.0.0+26.2.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+26.2.jar) | Paper 26.2, Java 25 |
+| 26.1 | Fabric | [village-railways-fabric-1.0.0+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+26.1.jar) | Fabric Loader 0.19+, Fabric API, Java 25 |
+| 26.1 | NeoForge | [village-railways-neoforge-1.0.0+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+26.1.jar) | NeoForge 26.1.2.124+, Java 25 |
+| 26.1 | Paper | [village-railways-paper-1.0.0+26.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+26.1.jar) | Paper 26.1, Java 25 |
+| 1.21.11 | Fabric | [village-railways-fabric-1.0.0+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-fabric-1.0.0+1.21.11.jar) | Fabric Loader 0.18+, Fabric API, Java 21 |
+| 1.21.11 | NeoForge | [village-railways-neoforge-1.0.0+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-neoforge-1.0.0+1.21.11.jar) | NeoForge 21.11.48+, Java 21 |
+| 1.21.11 | Paper | [village-railways-paper-1.0.0+1.21.11.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.0/village-railways-paper-1.0.0+1.21.11.jar) | Paper 1.21.11, Java 21 |
 
-- Fabric needs Fabric Loader 0.19 or newer and Fabric API. Mod Menu is optional and only gives you the settings screen.
-- NeoForge needs NeoForge 26.3 and nothing else.
-- Paper needs Paper 26.3.
+Fabric and NeoForge jars go in the `mods` folder, the Paper jar in `plugins`. Mod Menu is optional on Fabric and only adds the settings screen.
 
-Put the jar in the server's `mods` folder, or `plugins` on Paper. For singleplayer, install it on the client like any other mod.
+## Optimization
 
-The 26.2, 26.1 and 1.21.11 versions are on the `mc-26.2`, `mc-26.1` and `mc-1.21.11` branches. The first start of a world takes a bit longer on those, around 40 seconds.
+The generation is optimized to be fast and accurate, and it shows its progress in the log and on the loading screen. Keep in mind that, because of some limitations of Minecraft versions before 26.3, the first start of a world takes a bit longer there (around 40 seconds).
 
 ## Settings
 
@@ -89,6 +100,7 @@ Everything is in `config/village_railways.properties` (`plugins/VillageRailways`
 | `maxLinks` | `3` | Most lines one village may have, 1 to 3. |
 | `maxLength` | `1200` | Longest line between two villages, in blocks. Double lines may be longer. |
 | `minRun`, `maxRun` | `32`, `64` | The straight and the side step of a line at a slant. |
+| `starterMap` | `1` | A player joining the world for the first time gets a map of the network. `0` turns it off. |
 | `cutDepth` | `5` | Where the ground is higher than this over the rail, the line goes into a tunnel. |
 | `pillarSpacing` | `9` | Blocks between the pillars of a bridge in the open. |
 | `seaTubes` | `0` | `1` crosses seas in glass tubes. |
@@ -125,4 +137,4 @@ Found a bug or have an idea? Come to [Discord](https://discord.com/invite/X6yxJp
 
 ## License
 
-All rights reserved, with permission to use the mod on any server and in modpacks. See [LICENSE.md](LICENSE.md).
+All rights reserved. You may use the mod on any server, put it in modpacks and share the unmodified jars; the code and assets may not be used in other projects. See [LICENSE.md](LICENSE.md).
