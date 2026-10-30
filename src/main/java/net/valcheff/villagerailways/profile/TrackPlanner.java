@@ -463,12 +463,12 @@ public class TrackPlanner {
 		for (int i = from; i <= to; i++) {
 			if (i < line.length() - 1) {
 				Direction ahead = line.direction(i, i + 1).getCounterClockWise();
-				besideAt.put(ChunkPos.pack(line.x()[i] + ahead.getStepX() * DOUBLE_TRACK,
+				besideAt.put(ChunkPos.asLong(line.x()[i] + ahead.getStepX() * DOUBLE_TRACK,
 						line.z()[i] + ahead.getStepZ() * DOUBLE_TRACK), i);
 			}
 			if (i > 0) {
 				Direction back = line.direction(i - 1, i).getCounterClockWise();
-				besideAt.putIfAbsent(ChunkPos.pack(line.x()[i] + back.getStepX() * DOUBLE_TRACK,
+				besideAt.putIfAbsent(ChunkPos.asLong(line.x()[i] + back.getStepX() * DOUBLE_TRACK,
 						line.z()[i] + back.getStepZ() * DOUBLE_TRACK), i);
 			}
 		}
@@ -478,7 +478,7 @@ public class TrackPlanner {
 		int at = from;
 		for (int p = 0; p < length; p++) {
 			boolean stepIn = !openTo && p >= length - 2;
-			Integer found = stepIn ? Integer.valueOf(to) : besideAt.get(ChunkPos.pack(layout.x()[p], layout.z()[p]));
+			Integer found = stepIn ? Integer.valueOf(to) : besideAt.get(ChunkPos.asLong(layout.x()[p], layout.z()[p]));
 			if ((openFrom || p >= 2) && found != null) {
 				at = Math.max(at, found);
 			}

@@ -4,7 +4,7 @@ import java.nio.file.Path;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -30,10 +30,10 @@ public final class FabricEntry implements ModInitializer {
 			}
 		});
 
-		PayloadTypeRegistry.serverboundPlay().register(ConfigSync.Request.TYPE, ConfigSync.Request.CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(ConfigSync.Save.TYPE, ConfigSync.Save.CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(ConfigSync.OpenLand.TYPE, ConfigSync.OpenLand.CODEC);
-		PayloadTypeRegistry.clientboundPlay().register(ConfigSync.State.TYPE, ConfigSync.State.CODEC);
+		PayloadTypeRegistry.playC2S().register(ConfigSync.Request.TYPE, ConfigSync.Request.CODEC);
+		PayloadTypeRegistry.playC2S().register(ConfigSync.Save.TYPE, ConfigSync.Save.CODEC);
+		PayloadTypeRegistry.playC2S().register(ConfigSync.OpenLand.TYPE, ConfigSync.OpenLand.CODEC);
+		PayloadTypeRegistry.playS2C().register(ConfigSync.State.TYPE, ConfigSync.State.CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(ConfigSync.Request.TYPE, (payload, context) -> context
 				.responseSender().sendPacket(ConfigSync.answerRequest(context.server(), context.player())));
 		ServerPlayNetworking.registerGlobalReceiver(ConfigSync.Save.TYPE, (payload, context) -> context
@@ -44,7 +44,7 @@ public final class FabricEntry implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
 				VillageRailways.registerCommands(dispatcher));
 		ServerLifecycleEvents.SERVER_STARTING.register(VillageRailways::serverStarting);
-		ServerLevelEvents.LOAD.register((server, level) -> VillageRailways.levelLoaded(level));
+		ServerWorldEvents.LOAD.register((server, level) -> VillageRailways.levelLoaded(level));
 		ServerTickEvents.END_SERVER_TICK.register(VillageRailways::serverTick);
 		ServerLifecycleEvents.BEFORE_SAVE.register((server, flush, force) -> VillageRailways.beforeSave());
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> VillageRailways.serverStopping());

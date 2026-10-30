@@ -113,7 +113,7 @@ public class RailwayNetwork {
 		List<Box> buildings = predicted.buildings().stream()
 				.map(box -> new Box(box.minX(), box.minZ(), box.maxX(), box.maxZ()))
 				.toList();
-		return new Village(ChunkPos.pack(chunk.x(), chunk.z()), predicted.structure(), new Point(center.getX(), center.getZ()),
+		return new Village(ChunkPos.asLong(chunk.x, chunk.z), predicted.structure(), new Point(center.getX(), center.getZ()),
 				bounds.minX(), bounds.minZ(), bounds.maxX(), bounds.maxZ(), buildings);
 	}
 

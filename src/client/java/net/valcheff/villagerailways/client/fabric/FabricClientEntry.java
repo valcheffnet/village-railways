@@ -23,7 +23,7 @@ public class FabricClientEntry implements ClientModInitializer {
 			}
 		});
 		ClientPlayNetworking.registerGlobalReceiver(ConfigSync.State.TYPE, (state, context) -> {
-			if (context.client().gui.screen() instanceof RailwayConfigScreen screen) {
+			if (context.client().screen instanceof RailwayConfigScreen screen) {
 				screen.show(state);
 			}
 		});

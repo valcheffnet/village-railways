@@ -35,7 +35,7 @@ public final class NeoForgeClientEntry {
 		container.registerExtensionPoint(IConfigScreenFactory.class, (mod, parent) -> new RailwayConfigScreen(parent));
 		modBus.addListener(RegisterClientPayloadHandlersEvent.class, event ->
 				event.register(ConfigSync.State.TYPE, (state, context) -> {
-					if (Minecraft.getInstance().gui.screen() instanceof RailwayConfigScreen screen) {
+					if (Minecraft.getInstance().screen instanceof RailwayConfigScreen screen) {
 						screen.show(state);
 					}
 				}));

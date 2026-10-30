@@ -54,8 +54,8 @@ public final class SpeedDisplay {
 			if (before != NOT_RIDING) {
 				// A tick is a twentieth of a second.
 				double speed = now.distanceTo(before) * 20 / INTERVAL;
-				player.sendOverlayMessage(Component.literal(String.format(Locale.ROOT, "%.1f blocks/s (%.0f km/h)",
-						speed, speed * 3.6)));
+				player.displayClientMessage(Component.literal(String.format(Locale.ROOT, "%.1f blocks/s (%.0f km/h)",
+						speed, speed * 3.6)), true);
 			}
 		}
 	}

@@ -206,7 +206,7 @@ public class BuildState {
 
 	/** Marks a chunk decorated and returns the lines to build into it. */
 	public synchronized List<VillagePair> decorate(ChunkPos chunk) {
-		long key = ChunkPos.pack(chunk.x(), chunk.z());
+		long key = ChunkPos.asLong(chunk.x, chunk.z);
 		setBit(decorated, key);
 		return List.copyOf(linesByChunk.getOrDefault(key, List.of()));
 	}
@@ -224,7 +224,7 @@ public class BuildState {
 
 	/** Whether the lines a chunk was to get were built into it as it generated. */
 	public synchronized boolean isDecorated(int chunkX, int chunkZ) {
-		return isSet(decorated, ChunkPos.pack(chunkX, chunkZ));
+		return isSet(decorated, ChunkPos.asLong(chunkX, chunkZ));
 	}
 
 	/**
@@ -336,7 +336,7 @@ public class BuildState {
 			int maxChunkZ = (Math.max(a.z(), b.z()) + reach) >> 4;
 			for (int x = minChunkX; x <= maxChunkX; x++) {
 				for (int z = minChunkZ; z <= maxChunkZ; z++) {
-					chunks.add(ChunkPos.pack(x, z));
+					chunks.add(ChunkPos.asLong(x, z));
 				}
 			}
 		}
@@ -361,7 +361,7 @@ public class BuildState {
 					int offset = entry * 4;
 					if (header[offset] != 0 || header[offset + 1] != 0 || header[offset + 2] != 0) {
 						// Entries run x fastest: entry = localX + localZ * 32.
-						setBit(preexisting, ChunkPos.pack(regionX * 32 + (entry & 31), regionZ * 32 + (entry >> 5)));
+						setBit(preexisting, ChunkPos.asLong(regionX * 32 + (entry & 31), regionZ * 32 + (entry >> 5)));
 					}
 				}
 			}

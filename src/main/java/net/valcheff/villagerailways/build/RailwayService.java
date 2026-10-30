@@ -77,6 +77,8 @@ public class RailwayService {
 	private static final int LIVED_CHECK_INTERVAL = 40;
 	/** Seconds between reports of the planning that generating chunks wait for, as at the first start of a world. */
 	private static final int PROGRESS_SECONDS = 3;
+	/** Longest a generating chunk waits for the planning, well under the server watchdog's minute. */
+	private static final int MAX_WAIT_SECONDS = 45;
 	/** Chunks around each player checked for time spent, beyond the simulation distance. */
 	private static final int LIVED_RADIUS = 12;
 	/** Chunks given their late lines per tick, so a burst does not stall the server. */
@@ -103,6 +105,8 @@ public class RailwayService {
 	private volatile boolean wallsStale = true;
 	/** Generating chunks waiting for planning now. */
 	private final AtomicInteger waiting = new AtomicInteger();
+	/** Whether the server has started ticking, so it is done starting. */
+	private volatile boolean ticking;
 	/** When the planning that chunks wait for was last reported, in nanoseconds. */
 	private final AtomicLong lastProgress = new AtomicLong(System.nanoTime());
 	/** The squares queued for planning, done once planned. */
@@ -150,7 +154,7 @@ public class RailwayService {
 		for (int squareX = -SPAWN_SQUARES; squareX < SPAWN_SQUARES; squareX++) {
 			for (int squareZ = -SPAWN_SQUARES; squareZ < SPAWN_SQUARES; squareZ++) {
 				service.planSquare(squareX, squareZ);
-				service.squares.put(ChunkPos.pack(squareX, squareZ), CompletableFuture.completedFuture(null));
+				service.squares.put(ChunkPos.asLong(squareX, squareZ), CompletableFuture.completedFuture(null));
 			}
 		}
 		return service;
@@ -239,7 +243,7 @@ public class RailwayService {
 					}
 					int x = squareX + dx;
 					int z = squareZ + dz;
-					around.add(squares.computeIfAbsent(ChunkPos.pack(x, z),
+					around.add(squares.computeIfAbsent(ChunkPos.asLong(x, z),
 							key -> CompletableFuture.runAsync(() -> planSquare(x, z), planner)));
 				}
 			}
@@ -299,6 +303,7 @@ public class RailwayService {
 	 * generated, and every {@value #LIVED_CHECK_INTERVAL} ticks notes the chunks around players they have lived in.
 	 */
 	public void tick(int tickCount) {
+		ticking = true;
 		if (tickCount % LIVED_CHECK_INTERVAL == 0) {
 			markLivedChunks();
 			planAroundPlayers();
@@ -307,7 +312,7 @@ public class RailwayService {
 		Map<Long, List<VillagePair>> queued = buildState.takeQueued(
 				chunk -> level.getChunkSource().getChunkNow(ChunkPos.getX(chunk), ChunkPos.getZ(chunk)) != null, LATER_PER_TICK);
 		for (Map.Entry<Long, List<VillagePair>> entry : queued.entrySet()) {
-			ChunkPos chunk = ChunkPos.unpack(entry.getKey());
+			ChunkPos chunk = new ChunkPos(entry.getKey());
 			// A line not profiled yet is profiled off the server thread, and the chunk tried again after with all its
 			// lines: built one after another, the clearing for a later one would take away the rails of the first.
 			List<Link> unprofiled = entry.getValue().stream().filter(key -> plans.get(key) == null)
@@ -373,7 +378,7 @@ public class RailwayService {
 	private boolean isBuiltAndLoaded(Link station, BlockPos block) {
 		int chunkX = block.getX() >> 4;
 		int chunkZ = block.getZ() >> 4;
-		return (station.status() == Link.Status.BUILT || buildState.isBuilt(ChunkPos.pack(chunkX, chunkZ), station.key()))
+		return (station.status() == Link.Status.BUILT || buildState.isBuilt(ChunkPos.asLong(chunkX, chunkZ), station.key()))
 				&& level.getChunkSource().getChunkNow(chunkX, chunkZ) != null;
 	}
 
@@ -412,7 +417,7 @@ public class RailwayService {
 				for (int dz = -LIVED_RADIUS; dz <= LIVED_RADIUS; dz++) {
 					LevelChunk chunk = level.getChunkSource().getChunkNow(centerX + dx, centerZ + dz);
 					if (chunk != null && chunk.getInhabitedTime() >= LIVED_TICKS) {
-						buildState.markLived(ChunkPos.pack(centerX + dx, centerZ + dz));
+						buildState.markLived(ChunkPos.asLong(centerX + dx, centerZ + dz));
 					}
 				}
 			}
@@ -420,9 +425,9 @@ public class RailwayService {
 	}
 
 	/**
-	 * Waits until the given squares are planned. While it takes long, as it does at the first start of a world, how
-	 * far the planning has got goes to the log every {@value #PROGRESS_SECONDS} seconds, so the start does not look
-	 * stuck.
+	 * Waits until the given squares are planned, at most {@value #MAX_WAIT_SECONDS} seconds. While it takes long, as it
+	 * does at the first start of a world, how far the planning has got goes to the log every
+	 * {@value #PROGRESS_SECONDS} seconds, so the start does not look stuck.
 	 */
 	private void awaitPlanned(List<CompletableFuture<Void>> around) {
 		CompletableFuture<Void> all = CompletableFuture.allOf(around.toArray(CompletableFuture[]::new));
@@ -430,12 +435,20 @@ public class RailwayService {
 			return;
 		}
 		waiting.incrementAndGet();
+		long started = System.nanoTime();
 		try {
 			while (true) {
 				try {
 					all.get(PROGRESS_SECONDS, TimeUnit.SECONDS);
 					return;
 				} catch (TimeoutException e) {
+					if (System.nanoTime() - started > TimeUnit.SECONDS.toNanos(MAX_WAIT_SECONDS)) {
+						// Planning the land of this game version takes long; the server's watchdog must not stop it.
+						// A line planned through the chunk after all is built into it later, as it loads.
+						VillageRailways.LOGGER.warn("A chunk waited {} s for railway planning and generates now; the "
+								+ "planning goes on", MAX_WAIT_SECONDS);
+						return;
+					}
 					reportProgress();
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
@@ -473,11 +486,16 @@ public class RailwayService {
 	}
 
 	/**
-	 * Builds every line that runs through a chunk; called once per chunk, while it generates. The chunk waits until
-	 * the squares around it are planned, so no line that should run through it is planned after it is made.
+	 * Builds every line that runs through a chunk; called once per chunk, while it generates. The chunk waits for the
+	 * squares around it to be planned, so a line that should run through it is seldom planned after it is made: only
+	 * while the server starts, when it waits for its own square alone, or when the planning takes longer than
+	 * {@value #MAX_WAIT_SECONDS} seconds. Such a line is built into the chunk later, as it loads.
 	 */
 	public void decorate(WorldGenLevel region, ChunkPos chunk) {
-		awaitPlanned(planAround(chunk.getMinBlockX(), chunk.getMinBlockZ()));
+		List<CompletableFuture<Void>> around = planAround(chunk.getMinBlockX(), chunk.getMinBlockZ());
+		// While the server starts, the land round spawn waits only for its own square, or the start would take
+		// minutes on this game version; a line planned through it after all is built into it as it loads.
+		awaitPlanned(ticking ? around : around.subList(0, 1));
 		List<VillagePair> keys = buildState.decorate(chunk);
 		List<TrackPlan> toBuild = new ArrayList<>();
 		List<VillagePair> built = new ArrayList<>();
@@ -497,9 +515,9 @@ public class RailwayService {
 		if (toBuild.isEmpty()) {
 			return;
 		}
-		LineBuilder.Reachable neighbours = (x, z) -> Math.abs(x - chunk.x()) <= 1 && Math.abs(z - chunk.z()) <= 1;
+		LineBuilder.Reachable neighbours = (x, z) -> Math.abs(x - chunk.x) <= 1 && Math.abs(z - chunk.z) <= 1;
 		LineBuilder.build(region, chunk, toBuild, neighbours, builtWith(toBuild, built, neighbours), trackSettings);
-		long packed = ChunkPos.pack(chunk.x(), chunk.z());
+		long packed = ChunkPos.asLong(chunk.x, chunk.z);
 		for (VillagePair key : built) {
 			buildState.markBuilt(packed, key);
 		}
@@ -524,7 +542,7 @@ public class RailwayService {
 		}
 		return (x, z, line) -> {
 			VillagePair key = keyOf.get(line);
-			return key != null && reachable.test(x, z) && buildState.isBuilt(ChunkPos.pack(x, z), key);
+			return key != null && reachable.test(x, z) && buildState.isBuilt(ChunkPos.asLong(x, z), key);
 		};
 	}
 

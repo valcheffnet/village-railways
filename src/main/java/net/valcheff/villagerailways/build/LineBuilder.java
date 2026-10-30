@@ -250,7 +250,7 @@ public final class LineBuilder {
 				int z = line.z()[i];
 				if (x >= chunk.getMinBlockX() - reach && x <= chunk.getMaxBlockX() + reach
 						&& z >= chunk.getMinBlockZ() - reach && z <= chunk.getMaxBlockZ() + reach) {
-					rails.put(ChunkPos.pack(x, z), new int[] {p, line.track()[i]});
+					rails.put(ChunkPos.asLong(x, z), new int[] {p, line.track()[i]});
 				}
 			}
 		}
@@ -1007,7 +1007,7 @@ public final class LineBuilder {
 		} else if (section != Section.BRIDGE && section != Section.TUNNEL && section != Section.TUBE
 				&& templated(i) == null && !isWesternStation() && isLampSpot(i, LAMP_SPACING / 2)) {
 			placePost(x + lit.getStepX(), track, z + lit.getStepZ(),
-					Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState());
+					Blocks.COPPER_LANTERN.unaffected().defaultBlockState());
 		}
 	}
 
@@ -1017,7 +1017,7 @@ public final class LineBuilder {
 	 * own rails are left out; the station lays its rails, with their powered rails, itself.
 	 */
 	private void placeWesternHouse() {
-		StructureTemplate house = level.getLevel().getStructureTemplateManager().get(WESTERN_STATION).orElse(null);
+		StructureTemplate house = level.getLevel().getStructureManager().get(WESTERN_STATION).orElse(null);
 		if (house == null) {
 			return;
 		}
@@ -1154,7 +1154,7 @@ public final class LineBuilder {
 		int x = plan.x()[i] + out.getStepX();
 		int z = plan.z()[i] + out.getStepZ();
 		int track = plan.track()[i];
-		if (!inChunk(x, z) || rails.containsKey(ChunkPos.pack(x, z))
+		if (!inChunk(x, z) || rails.containsKey(ChunkPos.asLong(x, z))
 				|| level.getBlockState(pos.set(x, track, z)).getBlock() instanceof BaseRailBlock) {
 			return;
 		}
@@ -1327,7 +1327,7 @@ public final class LineBuilder {
 	/** The side of block i where another line's rail runs level with it, two blocks over, or null. */
 	private Direction pairSide(int i, Direction side) {
 		for (Direction towards : new Direction[] {side, side.getOpposite()}) {
-			int[] other = rails.get(ChunkPos.pack(plan.x()[i] + towards.getStepX() * DOUBLE_TRACK,
+			int[] other = rails.get(ChunkPos.asLong(plan.x()[i] + towards.getStepX() * DOUBLE_TRACK,
 					plan.z()[i] + towards.getStepZ() * DOUBLE_TRACK));
 			if (other != null && other[0] != planIndex && other[1] == plan.track()[i]) {
 				return towards;
@@ -1347,7 +1347,7 @@ public final class LineBuilder {
 		// A third track beyond, another line running beside the double track, needs what stands there.
 		int beyondX = x + pair.getStepX();
 		int beyondZ = z + pair.getStepZ();
-		if (rails.containsKey(ChunkPos.pack(beyondX, beyondZ))
+		if (rails.containsKey(ChunkPos.asLong(beyondX, beyondZ))
 				|| level.getBlockState(pos.set(beyondX, track, beyondZ)).getBlock() instanceof BaseRailBlock) {
 			return;
 		}
@@ -1391,7 +1391,12 @@ public final class LineBuilder {
 	private static BlockState railingLantern(int x, int z, boolean weathered) {
 		WeatheringCopper.WeatherState[] stages = WeatheringCopper.WeatherState.values();
 		int stage = weathered ? Math.floorMod(x * 73856093 ^ z * 19349663, stages.length) : 0;
-		return Blocks.COPPER_LANTERN.weathering().pick(stages[stage]).defaultBlockState();
+		return (switch (stages[stage]) {
+			case UNAFFECTED -> Blocks.COPPER_LANTERN.unaffected();
+			case EXPOSED -> Blocks.COPPER_LANTERN.exposed();
+			case WEATHERED -> Blocks.COPPER_LANTERN.weathered();
+			case OXIDIZED -> Blocks.COPPER_LANTERN.oxidized();
+		}).defaultBlockState();
 	}
 
 	/** A torch beside the rail. A post that stood there gives way, so nothing stands on a torch. */
@@ -1617,7 +1622,7 @@ public final class LineBuilder {
 				placeIfFree(fx, track + 2, fz, fence(FENCE, back ? forward.getOpposite() : null, ahead ? forward : null));
 			} else if (at == 0) {
 				if (isFrameLantern(i)) {
-					placeIfFree(fx, track + 2, fz, Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState()
+					placeIfFree(fx, track + 2, fz, Blocks.COPPER_LANTERN.unaffected().defaultBlockState()
 							.setValue(BlockStateProperties.HANGING, true));
 				}
 			} else {
@@ -1775,7 +1780,7 @@ public final class LineBuilder {
 
 	/** A lantern hanging from the ceiling, or standing on the floor where a cave leaves no ceiling. */
 	private void hangLantern(int x, int track, int z) {
-		BlockState lantern = Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState();
+		BlockState lantern = Blocks.COPPER_LANTERN.unaffected().defaultBlockState();
 		boolean ceiling = level.getBlockState(pos.set(x, track + 3, z)).isSolid();
 		if (ceiling) {
 			placeIfFree(x, track + 2, z, lantern.setValue(BlockStateProperties.HANGING, true));
@@ -1891,7 +1896,7 @@ public final class LineBuilder {
 	/** What hangs off or grows on trees: leaves, vines, cocoa, shelf mushrooms, lichen and hanging moss. */
 	private static boolean isLeafy(BlockState state) {
 		return state.is(BlockTags.LEAVES) || state.is(Blocks.VINE) || state.is(Blocks.COCOA)
-				|| state.is(Blocks.SHELF_MUSHROOM) || state.is(Blocks.GLOW_LICHEN) || state.is(Blocks.PALE_HANGING_MOSS);
+				|| state.is(Blocks.GLOW_LICHEN) || state.is(Blocks.PALE_HANGING_MOSS);
 	}
 
 	private static boolean isStalk(BlockState state) {
@@ -2201,13 +2206,13 @@ public final class LineBuilder {
 	}
 
 	private boolean inChunk(int x, int z) {
-		return x >> 4 == chunk.x() && z >> 4 == chunk.z();
+		return x >> 4 == chunk.x && z >> 4 == chunk.z;
 	}
 
 	/** Trees may be cleared in this chunk and the reachable chunks around it. */
 	private boolean canWrite(int x, int z) {
 		int chunkX = x >> 4;
 		int chunkZ = z >> 4;
-		return Math.abs(chunkX - chunk.x()) <= 1 && Math.abs(chunkZ - chunk.z()) <= 1 && reachable.test(chunkX, chunkZ);
+		return Math.abs(chunkX - chunk.x) <= 1 && Math.abs(chunkZ - chunk.z) <= 1 && reachable.test(chunkX, chunkZ);
 	}
 }

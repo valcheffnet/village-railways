@@ -96,6 +96,6 @@ public class TerrainScorer implements NetworkPlanner.RouteScorer {
 		}
 		int gridX = Math.floorDiv(x + 4, 8) * 8;
 		int gridZ = Math.floorDiv(z + 4, 8) * 8;
-		return cache.computeIfAbsent(ChunkPos.pack(gridX, gridZ), key -> terrain.sample(gridX, gridZ));
+		return cache.computeIfAbsent(ChunkPos.asLong(gridX, gridZ), key -> terrain.sample(gridX, gridZ));
 	}
 }

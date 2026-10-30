@@ -5,9 +5,8 @@ import java.util.List;
 import net.minecraft.core.QuartPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
-import net.minecraft.world.level.biome.BiomeResolver;
+import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
-import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 
 /**
  * Turns down lines that would cross open ocean, in a world without sea tubes. A narrow strait of at most
@@ -18,14 +17,15 @@ import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 public class OceanFilter implements NetworkPlanner.PathFilter {
 	private static final int STEP = 4;
 
-	private final BiomeResolver biomes;
+	private final BiomeSource biomes;
+	private final Climate.Sampler sampler;
 	private final int quartSeaLevel;
 	private final int maxCrossing;
 
 	public OceanFilter(ServerLevel level, int maxCrossing) {
 		this.maxCrossing = maxCrossing;
-		Climate.Sampler sampler = level.getChunkSource().randomState().createClimateSampler(SamplerContext.builder().enableCaches().build());
-		this.biomes = level.getChunkSource().getGenerator().getBiomeSource().createResolver(sampler);
+		this.sampler = level.getChunkSource().randomState().sampler();
+		this.biomes = level.getChunkSource().getGenerator().getBiomeSource();
 		this.quartSeaLevel = QuartPos.fromBlock(level.getChunkSource().getGenerator().getSeaLevel());
 	}
 
@@ -49,6 +49,7 @@ public class OceanFilter implements NetworkPlanner.PathFilter {
 	}
 
 	public boolean isOcean(int x, int z) {
-		return biomes.getNoiseBiome(QuartPos.fromBlock(x), quartSeaLevel, QuartPos.fromBlock(z)).is(BiomeTags.IS_OCEAN);
+		return biomes.getNoiseBiome(QuartPos.fromBlock(x), quartSeaLevel, QuartPos.fromBlock(z), sampler)
+				.is(BiomeTags.IS_OCEAN);
 	}
 }

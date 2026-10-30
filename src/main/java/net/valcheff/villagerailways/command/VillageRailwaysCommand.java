@@ -349,7 +349,7 @@ public final class VillageRailwaysCommand {
 		long started = System.nanoTime();
 		Set<Long> chunks = new LinkedHashSet<>();
 		for (int i = 0; i < plan.length(); i++) {
-			chunks.add(ChunkPos.pack(plan.x()[i] >> 4, plan.z()[i] >> 4));
+			chunks.add(ChunkPos.asLong(plan.x()[i] >> 4, plan.z()[i] >> 4));
 		}
 		chunks.forEach(chunk -> overworld.getChunk(ChunkPos.getX(chunk), ChunkPos.getZ(chunk)));
 		long millis = (System.nanoTime() - started) / 1_000_000;
@@ -560,15 +560,15 @@ public final class VillageRailwaysCommand {
 		CommandSourceStack source = context.getSource();
 		ServerLevel level = source.getLevel();
 		StructurePredictor predictor = VillageRailways.villagePredictor(level);
-		ChunkPos centerChunk = ChunkPos.containing(BlockPos.containing(source.getPosition()));
+		ChunkPos centerChunk = new ChunkPos(BlockPos.containing(source.getPosition()));
 		int chunkRadius = (radius >> 4) + 1;
-		List<ChunkPos> candidates = predictor.candidateChunks(centerChunk.x() - chunkRadius, centerChunk.z() - chunkRadius,
-				centerChunk.x() + chunkRadius, centerChunk.z() + chunkRadius);
+		List<ChunkPos> candidates = predictor.candidateChunks(centerChunk.x - chunkRadius, centerChunk.z - chunkRadius,
+				centerChunk.x + chunkRadius, centerChunk.z + chunkRadius);
 		int villages = 0;
 		int mismatches = 0;
 		for (ChunkPos chunk : candidates) {
 			Optional<PredictedStructure> predicted = predictor.firstAt(chunk);
-			ChunkAccess access = level.getChunk(chunk.x(), chunk.z(), ChunkStatus.STRUCTURE_STARTS);
+			ChunkAccess access = level.getChunk(chunk.x, chunk.z, ChunkStatus.STRUCTURE_STARTS);
 			Optional<StructureStart> actual = access.getAllStarts().values().stream()
 					.filter(start -> start.isValid() && predictor.wants(start.getStructure()))
 					.findFirst();
@@ -578,7 +578,7 @@ public final class VillageRailwaysCommand {
 			String problem = compare(predicted, actual);
 			if (problem != null) {
 				mismatches++;
-				source.sendFailure(Component.literal("chunk " + chunk.x() + ", " + chunk.z() + ": " + problem));
+				source.sendFailure(Component.literal("chunk " + chunk.x + ", " + chunk.z + ": " + problem));
 			}
 		}
 		int found = villages;

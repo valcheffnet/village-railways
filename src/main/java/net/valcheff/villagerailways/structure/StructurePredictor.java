@@ -17,14 +17,12 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.WorldgenRandom;
-import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece;
 import net.minecraft.world.level.levelgen.structure.Structure;
@@ -47,7 +45,6 @@ public class StructurePredictor {
 	private final ChunkGenerator generator;
 	private final ChunkGeneratorStructureState structureState;
 	private final RandomState randomState;
-	private final Climate.Sampler climateSampler;
 	private final Registry<Structure> structures;
 	private final Predicate<Holder<Structure>> wanted;
 	private final List<Holder<StructureSet>> sets;
@@ -58,7 +55,6 @@ public class StructurePredictor {
 		this.generator = level.getChunkSource().getGenerator();
 		this.structureState = level.getChunkSource().getGeneratorState();
 		this.randomState = level.getChunkSource().randomState();
-		this.climateSampler = randomState.createClimateSampler(SamplerContext.builder().enableCaches().build());
 		this.structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
 		this.wanted = wanted;
 		this.sets = structureState.possibleStructureSets().stream()
@@ -82,10 +78,10 @@ public class StructurePredictor {
 	public List<PredictedStructure> structuresNear(BlockPos center, int radius) {
 		long radiusSq = (long) radius * radius;
 		List<PredictedStructure> found = new ArrayList<>();
-		ChunkPos centerChunk = ChunkPos.containing(center);
+		ChunkPos centerChunk = new ChunkPos(center);
 		int chunkRadius = (radius >> 4) + 1;
-		for (ChunkPos candidate : candidateChunks(centerChunk.x() - chunkRadius, centerChunk.z() - chunkRadius,
-				centerChunk.x() + chunkRadius, centerChunk.z() + chunkRadius)) {
+		for (ChunkPos candidate : candidateChunks(centerChunk.x - chunkRadius, centerChunk.z - chunkRadius,
+				centerChunk.x + chunkRadius, centerChunk.z + chunkRadius)) {
 			predictAt(candidate).stream().filter(structure -> horizontalDistanceSq(structure.center(), center) <= radiusSq)
 					.forEach(found::add);
 		}
@@ -103,7 +99,7 @@ public class StructurePredictor {
 			for (int cellX = Math.floorDiv(minChunkX, spacing); cellX <= Math.floorDiv(maxChunkX, spacing); cellX++) {
 				for (int cellZ = Math.floorDiv(minChunkZ, spacing); cellZ <= Math.floorDiv(maxChunkZ, spacing); cellZ++) {
 					ChunkPos chunk = placement.getPotentialStructureChunk(seed, cellX * spacing, cellZ * spacing);
-					if (chunk.x() >= minChunkX && chunk.x() <= maxChunkX && chunk.z() >= minChunkZ && chunk.z() <= maxChunkZ) {
+					if (chunk.x >= minChunkX && chunk.x <= maxChunkX && chunk.z >= minChunkZ && chunk.z <= maxChunkZ) {
 						chunks.add(chunk);
 					}
 				}
@@ -114,7 +110,7 @@ public class StructurePredictor {
 
 	/** The wanted structures that will start in {@code chunk}, if any. Results are cached. */
 	public List<PredictedStructure> predictAt(ChunkPos chunk) {
-		return cache.computeIfAbsent(ChunkPos.pack(chunk.x(), chunk.z()), key -> computeAt(chunk));
+		return cache.computeIfAbsent(ChunkPos.asLong(chunk.x, chunk.z), key -> computeAt(chunk));
 	}
 
 	/** Whether {@code structure} is one this predictor looks for. */
@@ -125,7 +121,7 @@ public class StructurePredictor {
 	private List<PredictedStructure> computeAt(ChunkPos chunk) {
 		List<PredictedStructure> found = new ArrayList<>();
 		for (Holder<StructureSet> set : sets) {
-			if (!set.value().placement().isStructureChunk(structureState, chunk.x(), chunk.z())) {
+			if (!set.value().placement().isStructureChunk(structureState, chunk.x, chunk.z)) {
 				continue;
 			}
 			StructureStart start = pickStart(set.value(), chunk);
@@ -148,7 +144,7 @@ public class StructurePredictor {
 			return tryGenerate(entries.getFirst(), chunk);
 		}
 		WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
-		random.setLargeFeatureSeed(structureState.getLevelSeed(), chunk.x(), chunk.z());
+		random.setLargeFeatureSeed(structureState.getLevelSeed(), chunk.x, chunk.z);
 		int totalWeight = entries.stream().mapToInt(StructureSet.StructureSelectionEntry::weight).sum();
 		while (!entries.isEmpty()) {
 			int roll = random.nextInt(totalWeight);
@@ -174,7 +170,7 @@ public class StructurePredictor {
 	private StructureStart tryGenerate(StructureSet.StructureSelectionEntry entry, ChunkPos chunk) {
 		Structure structure = entry.structure().value();
 		StructureStart start = structure.generate(entry.structure(), level.dimension(), level.registryAccess(), generator,
-				generator.getBiomeSource(), climateSampler, randomState, level.getServer().getStructureTemplateManager(),
+				generator.getBiomeSource(), randomState, level.getServer().getStructureManager(),
 				structureState.getLevelSeed(), chunk, 0, level, structure.biomes()::contains);
 		return start.isValid() ? start : null;
 	}
