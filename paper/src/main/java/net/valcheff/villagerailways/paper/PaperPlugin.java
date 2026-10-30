@@ -20,9 +20,11 @@ import net.minecraft.world.level.Level;
 import net.valcheff.villagerailways.Platform;
 import net.valcheff.villagerailways.VillageRailways;
 import org.bukkit.craftbukkit.CraftWorld;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.craftbukkit.generator.CraftLimitedRegion;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.world.WorldInitEvent;
 import org.bukkit.event.world.WorldSaveEvent;
 import org.bukkit.generator.BlockPopulator;
@@ -91,6 +93,11 @@ public final class PaperPlugin extends JavaPlugin implements Listener {
 		if (((CraftWorld) event.getWorld()).getHandle().dimension() == Level.OVERWORLD) {
 			VillageRailways.beforeSave();
 		}
+	}
+
+	@EventHandler
+	public void onPlayerJoin(PlayerJoinEvent event) {
+		VillageRailways.playerJoined(((CraftPlayer) event.getPlayer()).getHandle());
 	}
 
 	@EventHandler
