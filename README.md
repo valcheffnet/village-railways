@@ -51,7 +51,7 @@ On long stretches there are halts, small brick huts by the track with a minecart
 
 ## Old worlds
 
-Out of the box, lines only go through land that hasn't been generated yet, so nothing anyone has built gets touched. Add the mod to a world you've played for months and the railways show up in the land you explore from then on.
+Out of the box, lines only go through land that hasn't been generated yet, so nothing anyone has built gets touched. Lines will be generated only in the newly explored land.
 
 If you want lines through the old land too, an operator can ask for it in the settings screen ("Open the existing land to lines...", then "Backup and Build") or with `/villagerailways openland`. On the next server start the world is backed up into the `backups` folder first, then the lines are planned through the old land and built as it loads. Be warned that they will cut through whatever is in the way, houses and farms and redstone included, and only the backup can undo that.
 
