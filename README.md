@@ -92,6 +92,8 @@ Plans for the next versions, in no set order:
 
 Fabric and NeoForge jars go in the `mods` folder, the Paper jar in `plugins`. Mod Menu is optional on Fabric and only adds the settings screen.
 
+The Paper jar also runs on forks of Paper such as Purpur. It does not load on Spigot, CraftBukkit or Folia.
+
 ## Optimization
 
 The generation is optimized to be fast and accurate, and it shows its progress in the log and on the loading screen. Keep in mind that, because of some limitations of Minecraft versions before 26.3, the first start of a world takes a bit longer there (around 40 seconds).
