@@ -21,19 +21,19 @@ Not released yet. The code here is for Minecraft 26.3; builds for 26.2, 26.1 and
 </tr>
 <tr>
 <td><img src="art/screenshots/tunnel.jpg" alt="A tunnel"><br><em>Inside a long tunnel.</em></td>
-<td><img src="art/screenshots/cave-bridge-deck.jpg" alt="A bridge through a cave"><br><em>Where a tunnel breaks into a cave, the line crosses it on a bridge.</em></td>
+<td><img src="art/screenshots/double-tunnel.jpg" alt="A double track tunnel"><br><em>A trunk line runs on double track, tunnels included.</em></td>
 </tr>
 <tr>
+<td><img src="art/screenshots/cave-bridge-deck.jpg" alt="A bridge through a cave"><br><em>Where a tunnel breaks into a cave, the line crosses it on a bridge.</em></td>
 <td><img src="art/screenshots/cave-bridge.jpg" alt="A cave bridge from below"><br><em>The same kind of bridge from the cave floor.</em></td>
+</tr>
+<tr>
 <td><img src="art/screenshots/halt-tunnel.jpg" alt="A halt by a tunnel"><br><em>A halt at the mouth of a long tunnel.</em></td>
+<td><img src="art/screenshots/halt.jpg" alt="A halt at sunset"><br><em>A halt on open track.</em></td>
 </tr>
 <tr>
 <td><img src="art/screenshots/sea-tube.jpg" alt="A glass tube under the sea"><br><em>A glass tube on the sea bed.</em></td>
 <td><img src="art/screenshots/sea-tube-entrance.jpg" alt="Where a tube leaves the shore"><br><em>Where the tube leaves the shore.</em></td>
-</tr>
-<tr>
-<td><img src="art/screenshots/halt.jpg" alt="A halt at sunset"><br><em>A halt on open track.</em></td>
-<td><img src="art/screenshots/station-map.jpg" alt="Map of the network in a station"><br><em>Every western station has a map of the network on its wall.</em></td>
 </tr>
 </table>
 
@@ -65,7 +65,12 @@ To lay lines through the land that already exists as well, an operator can open 
 
 `/villagerailways mapitem` gives you a vanilla map with the whole network on it, reaching much farther than a normal map. `/villagerailways mapwall` gives a set of maps for a wall of item frames. The western stations hang such maps on their walls.
 
-<p align="center"><img src="art/screenshots/network-map.png" alt="A map of the network" width="50%"></p>
+<table>
+<tr>
+<td width="50%"><img src="art/screenshots/station-map.jpg" alt="Map of the network in a station"><br><em>A map of the network on the wall of a western station.</em></td>
+<td width="50%"><img src="art/screenshots/network-map.png" alt="A map of the network"><br><em>A network map from <code>/villagerailways mapitem</code>.</em></td>
+</tr>
+</table>
 
 ## Install
 
