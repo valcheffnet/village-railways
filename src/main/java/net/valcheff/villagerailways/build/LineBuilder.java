@@ -1017,7 +1017,7 @@ public final class LineBuilder {
 	 * own rails are left out; the station lays its rails, with their powered rails, itself.
 	 */
 	private void placeWesternHouse() {
-		StructureTemplate house = level.getLevel().getStructureTemplateManager().get(WESTERN_STATION).orElse(null);
+		StructureTemplate house = level.getLevel().getStructureManager().get(WESTERN_STATION).orElse(null);
 		if (house == null) {
 			return;
 		}
@@ -1891,7 +1891,7 @@ public final class LineBuilder {
 	/** What hangs off or grows on trees: leaves, vines, cocoa, shelf mushrooms, lichen and hanging moss. */
 	private static boolean isLeafy(BlockState state) {
 		return state.is(BlockTags.LEAVES) || state.is(Blocks.VINE) || state.is(Blocks.COCOA)
-				|| state.is(Blocks.SHELF_MUSHROOM) || state.is(Blocks.GLOW_LICHEN) || state.is(Blocks.PALE_HANGING_MOSS);
+				|| state.is(Blocks.GLOW_LICHEN) || state.is(Blocks.PALE_HANGING_MOSS);
 	}
 
 	private static boolean isStalk(BlockState state) {

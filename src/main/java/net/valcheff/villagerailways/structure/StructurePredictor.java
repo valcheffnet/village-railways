@@ -17,14 +17,12 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.WorldgenRandom;
-import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece;
 import net.minecraft.world.level.levelgen.structure.Structure;
@@ -47,7 +45,6 @@ public class StructurePredictor {
 	private final ChunkGenerator generator;
 	private final ChunkGeneratorStructureState structureState;
 	private final RandomState randomState;
-	private final Climate.Sampler climateSampler;
 	private final Registry<Structure> structures;
 	private final Predicate<Holder<Structure>> wanted;
 	private final List<Holder<StructureSet>> sets;
@@ -58,7 +55,6 @@ public class StructurePredictor {
 		this.generator = level.getChunkSource().getGenerator();
 		this.structureState = level.getChunkSource().getGeneratorState();
 		this.randomState = level.getChunkSource().randomState();
-		this.climateSampler = randomState.createClimateSampler(SamplerContext.builder().enableCaches().build());
 		this.structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
 		this.wanted = wanted;
 		this.sets = structureState.possibleStructureSets().stream()
@@ -174,7 +170,7 @@ public class StructurePredictor {
 	private StructureStart tryGenerate(StructureSet.StructureSelectionEntry entry, ChunkPos chunk) {
 		Structure structure = entry.structure().value();
 		StructureStart start = structure.generate(entry.structure(), level.dimension(), level.registryAccess(), generator,
-				generator.getBiomeSource(), climateSampler, randomState, level.getServer().getStructureTemplateManager(),
+				generator.getBiomeSource(), randomState, level.getServer().getStructureManager(),
 				structureState.getLevelSeed(), chunk, 0, level, structure.biomes()::contains);
 		return start.isValid() ? start : null;
 	}
