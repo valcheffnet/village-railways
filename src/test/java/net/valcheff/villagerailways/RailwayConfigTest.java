@@ -1,6 +1,7 @@
 package net.valcheff.villagerailways;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -34,6 +35,14 @@ class RailwayConfigTest {
 		assertEquals(40, config.planner().minRun());
 		assertEquals(PlannerSettings.DEFAULT.maxRun(), config.planner().maxRun());
 		assertEquals(new TrackSettings(TrackSettings.DEFAULT.cutDepth(), 6, false), config.trackFor(dir.resolve("new")));
+	}
+
+	@Test
+	void starterMapIsOnUnlessTurnedOff() throws IOException {
+		assertTrue(RailwayConfig.load(dir).starterMap());
+		Files.writeString(dir.resolve("village_railways.properties"), "starterMap=0\n");
+		assertFalse(RailwayConfig.load(dir).starterMap());
+		assertTrue(Files.readString(dir.resolve("village_railways.properties")).contains("starterMap=0"));
 	}
 
 	@Test

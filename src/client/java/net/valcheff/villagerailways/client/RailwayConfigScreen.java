@@ -96,7 +96,7 @@ public class RailwayConfigScreen extends Screen {
 				int index = setting.ordinal();
 				Tooltip tooltip = Tooltip.create(Component.literal(explanation(setting)));
 				AbstractWidget widget;
-				if (setting == Setting.SEA_TUBES) {
+				if (setting.isSwitch()) {
 					// A cycle button sets its tooltip again on every click, from the one given to its builder.
 					widget = contents.addChild(CycleButton.onOffBuilder(values.get(index) == 1).withTooltip(on -> tooltip)
 							.create(0, 0, WIDTH, 20, label(setting, 1), (button, on) -> values.set(index, on ? 1 : 0)));
@@ -196,6 +196,7 @@ public class RailwayConfigScreen extends Screen {
 			case MAX_LENGTH -> "Longest line: " + value + " blocks";
 			case MIN_RUN -> "Shortest straight of a slanted line: " + value + " blocks";
 			case MAX_RUN -> "Longest side step of a slanted line: " + value + " blocks";
+			case STARTER_MAP -> "Map for new players";
 			case CUT_DEPTH -> "Deepest open cut: " + value + " blocks";
 			case PILLAR_SPACING -> "Bridge pillars every " + value + " blocks";
 			case SEA_TUBES -> "Glass tubes under the sea";
@@ -209,6 +210,8 @@ public class RailwayConfigScreen extends Screen {
 					+ "join groups of villages that would be left apart, may be longer.";
 			case MIN_RUN, MAX_RUN -> "A line at a slant is built as a staircase of straights. The side step is at "
 					+ "least as long as the straight.";
+			case STARTER_MAP -> "A player who joins the world for the first time gets a map of the railway network "
+					+ "round where they arrive. Players who were here before get none.";
 			case CUT_DEPTH -> "Where the ground is higher than this over the rail, the line goes into a tunnel.";
 			case PILLAR_SPACING -> "Blocks between the pillars of a bridge in the open.";
 			case SEA_TUBES -> "Lines cross seas in glass tubes under water. Off, they keep off open sea and bridge "

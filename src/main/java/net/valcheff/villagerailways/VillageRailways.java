@@ -12,6 +12,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
@@ -20,6 +21,7 @@ import net.valcheff.villagerailways.build.RailwayService;
 import net.valcheff.villagerailways.command.SpeedDisplay;
 import net.valcheff.villagerailways.command.VillageRailwaysCommand;
 import net.valcheff.villagerailways.map.NetworkMaps;
+import net.valcheff.villagerailways.map.StarterMaps;
 import net.valcheff.villagerailways.network.RailwayNetwork;
 import net.valcheff.villagerailways.structure.StructurePredictor;
 import org.slf4j.Logger;
@@ -32,6 +34,8 @@ public final class VillageRailways {
 
 	private static final Map<ResourceKey<Level>, StructurePredictor> PREDICTORS = new ConcurrentHashMap<>();
 	private static volatile RailwayService service;
+	/** Whether players joining the world for the first time get a map of the network, as the config said at start. */
+	private static volatile boolean starterMap;
 
 	private VillageRailways() {
 	}
@@ -47,7 +51,9 @@ public final class VillageRailways {
 		}
 		try {
 			long started = System.nanoTime();
-			service = RailwayService.start(level, RailwayConfig.load(Platform.get().configDir()));
+			RailwayConfig config = RailwayConfig.load(Platform.get().configDir());
+			starterMap = config.starterMap();
+			service = RailwayService.start(level, config);
 			NetworkMaps.load(service.network().folder());
 			LOGGER.info("Railway network ready in {} ms", (System.nanoTime() - started) / 1_000_000);
 		} catch (IOException e) {
@@ -61,6 +67,14 @@ public final class VillageRailways {
 			running.tick(server.getTickCount());
 		}
 		SpeedDisplay.tick(server);
+	}
+
+	/** Gives a player joining the world for the first time a map of the network, when the config says so. */
+	public static void playerJoined(ServerPlayer player) {
+		RailwayService running = service;
+		if (running != null && starterMap) {
+			StarterMaps.playerJoined(player, running.network());
+		}
 	}
 
 	public static void beforeSave() {
