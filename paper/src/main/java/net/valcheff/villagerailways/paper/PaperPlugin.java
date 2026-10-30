@@ -56,6 +56,16 @@ public final class PaperPlugin extends JavaPlugin implements Listener {
 			public Path gameDir() {
 				return serverDir;
 			}
+
+			@Override
+			public String version() {
+				return getPluginMeta().getVersion();
+			}
+
+			@Override
+			public boolean paper() {
+				return true;
+			}
 		});
 		VillageRailways.serverStarting(MinecraftServer.getServer());
 		getServer().getPluginManager().registerEvents(this, this);

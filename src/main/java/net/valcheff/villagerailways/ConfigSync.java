@@ -127,7 +127,7 @@ public final class ConfigSync {
 				RailwayService.isOpenLandRequested(folder), canEdit(server, player));
 	}
 
-	private static boolean canEdit(MinecraftServer server, ServerPlayer player) {
+	static boolean canEdit(MinecraftServer server, ServerPlayer player) {
 		return server.isSingleplayerOwner(player.nameAndId())
 				|| Commands.hasPermission(Commands.LEVEL_ADMINS).test(player.createCommandSourceStack());
 	}

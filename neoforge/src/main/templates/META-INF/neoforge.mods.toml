@@ -1,11 +1,14 @@
 modLoader="javafml"
 loaderVersion="[1,)"
 license="All Rights Reserved"
+issueTrackerURL="https://discord.com/invite/X6yxJpk9Fz"
 
 [[mods]]
 modId="village_railways"
 version="${mod_version}"
 displayName="Village Railways"
+displayURL="https://www.curseforge.com/minecraft/mc-mods/village-railways"
+logoFile="assets/village_railways/icon.png"
 # The server builds everything: clients without the mod join it as well.
 displayTest="IGNORE_ALL_VERSION"
 authors="SasnycoN"
