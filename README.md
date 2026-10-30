@@ -39,7 +39,7 @@ This branch is Minecraft 26.3; the 26.2, 26.1 and 1.21.11 versions are on their 
 
 ## What gets built
 
-The track stays level wherever it can. A low hill gets an open cut, a mountain gets a tunnel with cobblestone walls, oak frames and copper lanterns, and rivers and ravines get bridges with pillars and railings. If a tunnel breaks into a cave on the way, the line crosses the cave on a bridge. The powered rails run off redstone torches hidden under the track, so you won't see torches every few blocks.
+The track stays level wherever it can. A low hill gets an open cut, a mountain gets a beautiful tunnel, and rivers and ravines get bridges with pillars and railings. If a tunnel breaks into a cave on the way, the line crosses the cave on a bridge. The powered rails run off redstone torches hidden under the track, so you won't see torches every few blocks.
 
 Every village has one station just outside it, where its lines meet. Groups of villages that would otherwise be cut off from the rest are joined by a longer double line, with two tracks all the way, and where one of those comes in, the station may be a large one: a big timber house by the tracks, with seats inside, two dispensers full of minecarts and a map of the network on the wall. Bridges are double track on every line, and every switch comes with a lever.
 
