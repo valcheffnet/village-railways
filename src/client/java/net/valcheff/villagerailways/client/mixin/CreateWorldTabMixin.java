@@ -1,6 +1,5 @@
 package net.valcheff.villagerailways.client.mixin;
 
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.StringWidget;
@@ -10,6 +9,7 @@ import net.minecraft.client.gui.layouts.GridLayout;
 import net.minecraft.client.gui.layouts.SpacerElement;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
+import net.valcheff.villagerailways.Platform;
 import net.valcheff.villagerailways.RailwayConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -34,7 +34,7 @@ abstract class CreateWorldTabMixin extends GridLayoutTab {
 
 	@Inject(method = "<init>", at = @At("TAIL"))
 	private void villageRailways$addSeaTubes(CreateWorldScreen screen, CallbackInfo info) {
-		boolean configured = RailwayConfig.load(FabricLoader.getInstance().getConfigDir())
+		boolean configured = RailwayConfig.load(Platform.get().configDir())
 				.get(RailwayConfig.Setting.SEA_TUBES) == 1;
 		RailwayConfig.chooseNewWorldSeaTubes(configured);
 		Component label = Component.literal("Railway Sea Tubes");

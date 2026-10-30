@@ -6,8 +6,6 @@ import java.util.List;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -22,6 +20,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.valcheff.villagerailways.ConfigSync;
+import net.valcheff.villagerailways.Platform;
 import net.valcheff.villagerailways.RailwayConfig;
 import net.valcheff.villagerailways.RailwayConfig.Setting;
 
@@ -52,10 +51,10 @@ public class RailwayConfigScreen extends Screen {
 		super(Component.literal("Village Railways"));
 		this.parent = parent;
 		boolean connected = Minecraft.getInstance().getConnection() != null;
-		onServer = connected && ClientPlayNetworking.canSend(ConfigSync.Request.TYPE);
+		onServer = connected && ClientPlatform.get().canSend(ConfigSync.Request.TYPE);
 		if (onServer) {
 			status = Component.literal("Asking the server for its settings...");
-			ClientPlayNetworking.send(new ConfigSync.Request());
+			ClientPlatform.get().send(new ConfigSync.Request());
 		} else {
 			values = new ArrayList<>(RailwayConfig.load(configDir()).values());
 			stored = List.copyOf(values);
@@ -67,7 +66,7 @@ public class RailwayConfigScreen extends Screen {
 	}
 
 	/** The server's settings, as it sent them when asked or after a save. */
-	void show(ConfigSync.State state) {
+	public void show(ConfigSync.State state) {
 		values = new ArrayList<>(state.values());
 		stored = List.copyOf(values);
 		world = state.world();
@@ -133,7 +132,7 @@ public class RailwayConfigScreen extends Screen {
 		if (onServer) {
 			saving = true;
 			status = Component.literal("Saving...");
-			ClientPlayNetworking.send(new ConfigSync.Save(List.copyOf(values)));
+			ClientPlatform.get().send(new ConfigSync.Save(List.copyOf(values)));
 		} else {
 			RailwayConfig.of(values).save(configDir());
 			values = new ArrayList<>(RailwayConfig.load(configDir()).values());
@@ -146,12 +145,12 @@ public class RailwayConfigScreen extends Screen {
 	/** Asks for the existing land to open, backed up first, after a warning, or calls that off. */
 	private void openLand() {
 		if (openLand) {
-			ClientPlayNetworking.send(new ConfigSync.OpenLand(false));
+			ClientPlatform.get().send(new ConfigSync.OpenLand(false));
 			return;
 		}
 		minecraft.gui.setScreen(new ConfirmScreen(yes -> {
 			if (yes) {
-				ClientPlayNetworking.send(new ConfigSync.OpenLand(true));
+				ClientPlatform.get().send(new ConfigSync.OpenLand(true));
 			}
 			minecraft.gui.setScreen(this);
 		}, Component.literal("Open the existing land to lines?"), Component.literal("At the next start of the server, "
@@ -180,7 +179,7 @@ public class RailwayConfigScreen extends Screen {
 	}
 
 	private static Path configDir() {
-		return FabricLoader.getInstance().getConfigDir();
+		return Platform.get().configDir();
 	}
 
 	private static int step(Setting setting) {

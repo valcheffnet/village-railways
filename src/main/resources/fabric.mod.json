@@ -10,13 +10,13 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"net.valcheff.villagerailways.VillageRailways"
+			"net.valcheff.villagerailways.fabric.FabricEntry"
 		],
 		"client": [
-			"net.valcheff.villagerailways.client.VillageRailwaysClient"
+			"net.valcheff.villagerailways.client.fabric.FabricClientEntry"
 		],
 		"modmenu": [
-			"net.valcheff.villagerailways.client.ModMenuIntegration"
+			"net.valcheff.villagerailways.client.fabric.ModMenuIntegration"
 		]
 	},
 	"mixins": [

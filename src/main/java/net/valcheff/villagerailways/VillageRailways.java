@@ -7,12 +7,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.loader.api.FabricLoader;
+import com.mojang.brigadier.CommandDispatcher;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -29,71 +25,76 @@ import net.valcheff.villagerailways.structure.StructurePredictor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class VillageRailways implements ModInitializer {
+/** The shared part of the mod, which the loader's entry point drives. */
+public final class VillageRailways {
 	public static final String MOD_ID = "village_railways";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
 	private static final Map<ResourceKey<Level>, StructurePredictor> PREDICTORS = new ConcurrentHashMap<>();
 	private static volatile RailwayService service;
 
-	@Override
-	public void onInitialize() {
-		ConfigSync.register();
-		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
-				VillageRailwaysCommand.register(dispatcher));
-		ServerLifecycleEvents.SERVER_STARTING.register(VillageRailways::backUpBeforeOpeningLand);
-		// The overworld loads before its spawn chunks generate, so lines around spawn are planned in time.
-		ServerLevelEvents.LOAD.register((server, level) -> {
-			if (level.dimension() == Level.OVERWORLD) {
-				try {
-					long started = System.nanoTime();
-					service = RailwayService.start(level, RailwayConfig.load(FabricLoader.getInstance().getConfigDir()));
-					NetworkMaps.load(service.network().folder());
-					LOGGER.info("Railway network ready in {} ms", (System.nanoTime() - started) / 1_000_000);
-				} catch (IOException e) {
-					throw new UncheckedIOException("Could not load the railway network of this world", e);
-				}
-			}
-		});
-		ServerTickEvents.END_SERVER_TICK.register(server -> {
-			RailwayService running = service;
-			if (running != null) {
-				running.tick(server.getTickCount());
-			}
-			SpeedDisplay.tick(server);
-		});
-		ServerLifecycleEvents.BEFORE_SAVE.register((server, flush, force) -> {
-			RailwayService running = service;
-			if (running != null) {
-				running.save();
-			}
-		});
-		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-			RailwayService running = service;
-			if (running != null) {
-				running.stop();
-			}
-		});
-		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
-			NetworkMaps.unload();
-			PREDICTORS.clear();
-			service = null;
-		});
-		LOGGER.info("Village Railways loaded");
+	private VillageRailways() {
+	}
+
+	public static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
+		VillageRailwaysCommand.register(dispatcher);
+	}
+
+	/** Loads the railway network with the overworld, before its spawn chunks generate, so lines there are in time. */
+	public static void levelLoaded(ServerLevel level) {
+		if (level.dimension() != Level.OVERWORLD) {
+			return;
+		}
+		try {
+			long started = System.nanoTime();
+			service = RailwayService.start(level, RailwayConfig.load(Platform.get().configDir()));
+			NetworkMaps.load(service.network().folder());
+			LOGGER.info("Railway network ready in {} ms", (System.nanoTime() - started) / 1_000_000);
+		} catch (IOException e) {
+			throw new UncheckedIOException("Could not load the railway network of this world", e);
+		}
+	}
+
+	public static void serverTick(MinecraftServer server) {
+		RailwayService running = service;
+		if (running != null) {
+			running.tick(server.getTickCount());
+		}
+		SpeedDisplay.tick(server);
+	}
+
+	public static void beforeSave() {
+		RailwayService running = service;
+		if (running != null) {
+			running.save();
+		}
+	}
+
+	public static void serverStopping() {
+		RailwayService running = service;
+		if (running != null) {
+			running.stop();
+		}
+	}
+
+	public static void serverStopped() {
+		NetworkMaps.unload();
+		PREDICTORS.clear();
+		service = null;
 	}
 
 	/**
 	 * Backs up a world whose existing land opens to lines at this start, before any of it loads. Without the backup the
 	 * land stays closed.
 	 */
-	private static void backUpBeforeOpeningLand(MinecraftServer server) {
+	public static void serverStarting(MinecraftServer server) {
 		Path world = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
 		Path folder = world.resolve("village_railways");
 		if (!RailwayService.isOpenLandRequested(folder)) {
 			return;
 		}
 		try {
-			Path backup = WorldBackup.write(world, FabricLoader.getInstance().getGameDir().resolve("backups"));
+			Path backup = WorldBackup.write(world, Platform.get().gameDir().resolve("backups"));
 			LOGGER.info("Backed up the world to {} ({} MB) before opening its existing land to railway lines", backup,
 					Files.size(backup) / 1_000_000);
 		} catch (IOException e) {

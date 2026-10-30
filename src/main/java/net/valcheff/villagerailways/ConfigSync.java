@@ -5,9 +5,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import io.netty.buffer.ByteBuf;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -89,33 +86,33 @@ public final class ConfigSync {
 		}
 	}
 
-	static void register() {
-		PayloadTypeRegistry.serverboundPlay().register(Request.TYPE, Request.CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(Save.TYPE, Save.CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(OpenLand.TYPE, OpenLand.CODEC);
-		PayloadTypeRegistry.clientboundPlay().register(State.TYPE, State.CODEC);
-		ServerPlayNetworking.registerGlobalReceiver(Request.TYPE,
-				(payload, context) -> context.responseSender().sendPacket(state(context.server(), context.player())));
-		ServerPlayNetworking.registerGlobalReceiver(Save.TYPE, (payload, context) -> {
-			if (canEdit(context.server(), context.player())) {
-				RailwayConfig.of(payload.values()).save(FabricLoader.getInstance().getConfigDir());
-				VillageRailways.LOGGER.info("{} changed the Village Railways settings; they apply from the next start",
-						context.player().getName().getString());
+	/** The settings for a player who asked for them. */
+	public static State answerRequest(MinecraftServer server, ServerPlayer player) {
+		return state(server, player);
+	}
+
+	/** Saves new settings when the player may change them, and answers with the settings as they are now. */
+	public static State answerSave(MinecraftServer server, ServerPlayer player, Save save) {
+		if (canEdit(server, player)) {
+			RailwayConfig.of(save.values()).save(Platform.get().configDir());
+			VillageRailways.LOGGER.info("{} changed the Village Railways settings; they apply from the next start",
+					player.getName().getString());
+		}
+		return state(server, player);
+	}
+
+	/** Asks for the existing land to open at the next start, or takes that back, when the player may. */
+	public static State answerOpenLand(MinecraftServer server, ServerPlayer player, OpenLand request) {
+		if (canEdit(server, player)) {
+			try {
+				RailwayService.requestOpenLand(folder(server), request.open());
+				VillageRailways.LOGGER.info("{} {} opening the existing land to railway lines at the next start",
+						player.getName().getString(), request.open() ? "asked for" : "called off");
+			} catch (IOException e) {
+				VillageRailways.LOGGER.warn("Could not ask for the existing land to open to lines", e);
 			}
-			context.responseSender().sendPacket(state(context.server(), context.player()));
-		});
-		ServerPlayNetworking.registerGlobalReceiver(OpenLand.TYPE, (payload, context) -> {
-			if (canEdit(context.server(), context.player())) {
-				try {
-					RailwayService.requestOpenLand(folder(context.server()), payload.open());
-					VillageRailways.LOGGER.info("{} {} opening the existing land to railway lines at the next start",
-							context.player().getName().getString(), payload.open() ? "asked for" : "called off");
-				} catch (IOException e) {
-					VillageRailways.LOGGER.warn("Could not ask for the existing land to open to lines", e);
-				}
-			}
-			context.responseSender().sendPacket(state(context.server(), context.player()));
-		});
+		}
+		return state(server, player);
 	}
 
 	private static Path folder(MinecraftServer server) {
@@ -123,7 +120,7 @@ public final class ConfigSync {
 	}
 
 	private static State state(MinecraftServer server, ServerPlayer player) {
-		RailwayConfig config = RailwayConfig.load(FabricLoader.getInstance().getConfigDir());
+		RailwayConfig config = RailwayConfig.load(Platform.get().configDir());
 		Path folder = folder(server);
 		TrackSettings kept = RailwayConfig.keptBy(folder);
 		return new State(config.values(), List.of(kept.cutDepth(), kept.pillarSpacing(), kept.seaTubes() ? 1 : 0),
