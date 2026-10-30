@@ -4,7 +4,7 @@
 
 **Server-side. Vanilla clients welcome.**
 
-Villages in Minecraft sit hundreds of blocks apart with nothing but wilderness between them. This mod joins them with minecart railways, and it builds them as the world generates, so a line is already there when you first walk into that land. Each village gets lines to up to three of its nearest neighbours. Everything is vanilla blocks, so the railways stay in the world even if you remove the mod later.
+Villages in Minecraft sit hundreds or sometimes thousands of blocks apart with nothing but wilderness between them. This mod joins them with minecart railways, and it builds them as the world generates, so a line is already there when you first walk into that land. Each village gets lines to up to three of its nearest neighbours. Everything is vanilla blocks, so the railways stay in the world even if you remove the mod later.
 
 It runs on the server. Players join with a normal vanilla client and don't need to install anything.
 
