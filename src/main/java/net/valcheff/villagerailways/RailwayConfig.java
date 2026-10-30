@@ -27,6 +27,7 @@ public final class RailwayConfig {
 		MAX_LENGTH("maxLength", 300, PlannerSettings.DEFAULT.maxGroupLength(), PlannerSettings.DEFAULT.maxLength()),
 		MIN_RUN("minRun", 16, 64, PlannerSettings.DEFAULT.minRun()),
 		MAX_RUN("maxRun", 32, 128, PlannerSettings.DEFAULT.maxRun()),
+		STARTER_MAP("starterMap", 0, 1, 1),
 		CUT_DEPTH("cutDepth", 2, 7, TrackSettings.DEFAULT.cutDepth()),
 		PILLAR_SPACING("pillarSpacing", 4, 16, TrackSettings.DEFAULT.pillarSpacing()),
 		SEA_TUBES("seaTubes", 0, 1, TrackSettings.DEFAULT.seaTubes() ? 1 : 0);
@@ -46,6 +47,11 @@ public final class RailwayConfig {
 		/** Whether a world keeps this value from its first start. */
 		public boolean keptByWorld() {
 			return this == CUT_DEPTH || this == PILLAR_SPACING || this == SEA_TUBES;
+		}
+
+		/** Whether this setting is on (1) or off (0) rather than a number. */
+		public boolean isSwitch() {
+			return min == 0 && max == 1;
 		}
 	}
 
@@ -124,6 +130,11 @@ public final class RailwayConfig {
 		newWorldSeaTubes = seaTubes;
 	}
 
+	/** Whether a player joining the world for the first time gets a map of the railway network. */
+	public boolean starterMap() {
+		return get(Setting.STARTER_MAP) == 1;
+	}
+
 	/** The build values for new worlds. */
 	public TrackSettings track() {
 		return new TrackSettings(get(Setting.CUT_DEPTH), get(Setting.PILLAR_SPACING), get(Setting.SEA_TUBES) == 1);
@@ -192,6 +203,9 @@ public final class RailwayConfig {
 				writer.write("# (16-64) and the longest side step (32-128, at least minRun), in blocks.\n");
 				writer.write("minRun=" + get(Setting.MIN_RUN) + "\n");
 				writer.write("maxRun=" + get(Setting.MAX_RUN) + "\n");
+				writer.write("\n# Whether a player joining the world for the first time gets a map of the railway\n");
+				writer.write("# network (1) or not (0).\n");
+				writer.write("starterMap=" + get(Setting.STARTER_MAP) + "\n");
 				writer.write("\n# A world keeps these from its first start, so changes apply to new worlds only.\n");
 				writeTrack(writer, track());
 			}
