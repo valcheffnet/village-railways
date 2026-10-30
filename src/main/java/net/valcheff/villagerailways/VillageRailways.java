@@ -53,6 +53,7 @@ public final class VillageRailways {
 			long started = System.nanoTime();
 			RailwayConfig config = RailwayConfig.load(Platform.get().configDir());
 			starterMap = config.starterMap();
+			UpdateCheck.start(config);
 			service = RailwayService.start(level, config);
 			NetworkMaps.load(service.network().folder());
 			LOGGER.info("Railway network ready in {} ms", (System.nanoTime() - started) / 1_000_000);
@@ -69,12 +70,16 @@ public final class VillageRailways {
 		SpeedDisplay.tick(server);
 	}
 
-	/** Gives a player joining the world for the first time a map of the network, when the config says so. */
+	/**
+	 * Gives a player joining the world for the first time a map of the network, when the config says so, and tells an
+	 * admin about a newer version and where to ask for help.
+	 */
 	public static void playerJoined(ServerPlayer player) {
 		RailwayService running = service;
 		if (running != null && starterMap) {
 			StarterMaps.playerJoined(player, running.network());
 		}
+		UpdateCheck.joined(player);
 	}
 
 	public static void beforeSave() {

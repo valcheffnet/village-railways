@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
@@ -25,7 +26,7 @@ import net.valcheff.villagerailways.VillageRailways;
 /** NeoForge entry point: wires NeoForge's events and networking to the shared code. */
 @Mod(VillageRailways.MOD_ID)
 public final class NeoForgeEntry {
-	public NeoForgeEntry(IEventBus modBus) {
+	public NeoForgeEntry(IEventBus modBus, ModContainer container) {
 		Platform.set(new Platform.Services() {
 			@Override
 			public Path configDir() {
@@ -35,6 +36,11 @@ public final class NeoForgeEntry {
 			@Override
 			public Path gameDir() {
 				return FMLPaths.GAMEDIR.get();
+			}
+
+			@Override
+			public String version() {
+				return container.getModInfo().getVersion().toString();
 			}
 		});
 

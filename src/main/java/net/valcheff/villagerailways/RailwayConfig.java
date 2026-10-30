@@ -27,7 +27,9 @@ public final class RailwayConfig {
 		MAX_LENGTH("maxLength", 300, PlannerSettings.DEFAULT.maxGroupLength(), PlannerSettings.DEFAULT.maxLength()),
 		MIN_RUN("minRun", 16, 64, PlannerSettings.DEFAULT.minRun()),
 		MAX_RUN("maxRun", 32, 128, PlannerSettings.DEFAULT.maxRun()),
-		STARTER_MAP("starterMap", 0, 1, 1),
+		STARTER_MAP("starterMap", 0, 1, 0),
+		UPDATE_CHECK("updateCheck", 0, 1, 1),
+		SUPPORT_MESSAGE("supportMessage", 0, 1, 1),
 		CUT_DEPTH("cutDepth", 2, 7, TrackSettings.DEFAULT.cutDepth()),
 		PILLAR_SPACING("pillarSpacing", 4, 16, TrackSettings.DEFAULT.pillarSpacing()),
 		SEA_TUBES("seaTubes", 0, 1, TrackSettings.DEFAULT.seaTubes() ? 1 : 0);
@@ -135,6 +137,16 @@ public final class RailwayConfig {
 		return get(Setting.STARTER_MAP) == 1;
 	}
 
+	/** Whether the server asks GitHub at start if a newer version is out, and tells admins when they join. */
+	public boolean updateCheck() {
+		return get(Setting.UPDATE_CHECK) == 1;
+	}
+
+	/** Whether admins get a line with the Discord link for questions and bugs when they join. */
+	public boolean supportMessage() {
+		return get(Setting.SUPPORT_MESSAGE) == 1;
+	}
+
 	/** The build values for new worlds. */
 	public TrackSettings track() {
 		return new TrackSettings(get(Setting.CUT_DEPTH), get(Setting.PILLAR_SPACING), get(Setting.SEA_TUBES) == 1);
@@ -206,6 +218,12 @@ public final class RailwayConfig {
 				writer.write("\n# Whether a player joining the world for the first time gets a map of the railway\n");
 				writer.write("# network (1) or not (0).\n");
 				writer.write("starterMap=" + get(Setting.STARTER_MAP) + "\n");
+				writer.write("\n# Whether the server asks GitHub once when it starts if a newer version is out, and tells\n");
+				writer.write("# admins when they join (1) or not (0). Nothing about the server or its players is sent.\n");
+				writer.write("updateCheck=" + get(Setting.UPDATE_CHECK) + "\n");
+				writer.write("\n# Whether admins get a line with the Discord link for questions and bugs when they join\n");
+				writer.write("# (1) or not (0).\n");
+				writer.write("supportMessage=" + get(Setting.SUPPORT_MESSAGE) + "\n");
 				writer.write("\n# A world keeps these from its first start, so changes apply to new worlds only.\n");
 				writeTrack(writer, track());
 			}

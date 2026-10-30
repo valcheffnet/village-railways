@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +46,7 @@ import net.valcheff.villagerailways.network.Point;
 import net.valcheff.villagerailways.network.RailwayNetwork;
 import net.valcheff.villagerailways.network.StationLayout;
 import net.valcheff.villagerailways.network.Village;
+import net.valcheff.villagerailways.profile.Section;
 import net.valcheff.villagerailways.profile.TerrainSampler;
 import net.valcheff.villagerailways.profile.TrackPlan;
 import net.valcheff.villagerailways.profile.TrackPlanner;
@@ -101,6 +103,8 @@ public class RailwayService {
 	private final TerrainSampler terrain;
 	private final Map<VillagePair, Link> lines = new ConcurrentHashMap<>();
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
+	/** Where each line shares a double tunnel with another one; see {@link #pairing}. */
+	private final Map<VillagePair, int[]> pairings = new ConcurrentHashMap<>();
 	/** Whether lines were planned or finished since the maps on the station walls were drawn. */
 	private volatile boolean wallsStale = true;
 	/** Generating chunks waiting for planning now. */
@@ -278,6 +282,10 @@ public class RailwayService {
 	/** Registers new lines and stations for building, or ones planned before and changed since. */
 	private void addLines(List<Link> added) {
 		wallsStale |= !added.isEmpty();
+		if (!added.isEmpty()) {
+			// A new line may run beside one planned before.
+			pairings.clear();
+		}
 		for (Link link : added) {
 			forgetStationPlans(link);
 			if (lines.containsKey(link.key())) {
@@ -324,16 +332,19 @@ public class RailwayService {
 				continue;
 			}
 			List<TrackPlan> toBuild = new ArrayList<>();
+			Map<TrackPlan, int[]> paired = new IdentityHashMap<>();
 			for (VillagePair key : entry.getValue()) {
 				Optional<TrackPlan> plan = plans.get(key);
-				if (plan != null && plan.isPresent()) {
+				Link link = lines.get(key);
+				if (plan != null && plan.isPresent() && link != null) {
 					toBuild.add(plan.get());
+					paired.put(plan.get(), pairing(link, plan.get()));
 				}
 			}
 			if (!toBuild.isEmpty()) {
 				LineBuilder.Reachable loaded = (x, z) -> level.getChunkSource().getChunkNow(x, z) != null;
 				LineBuilder.build(level, chunk, toBuild, loaded, builtWith(toBuild, entry.getValue(), loaded),
-						trackSettings);
+						paired, trackSettings);
 				for (VillagePair key : entry.getValue()) {
 					if (plans.get(key) != null && plans.get(key).isPresent()) {
 						buildState.markBuilt(entry.getKey(), key);
@@ -499,6 +510,7 @@ public class RailwayService {
 		List<VillagePair> keys = buildState.decorate(chunk);
 		List<TrackPlan> toBuild = new ArrayList<>();
 		List<VillagePair> built = new ArrayList<>();
+		Map<TrackPlan, int[]> paired = new IdentityHashMap<>();
 		for (VillagePair key : keys) {
 			Link link = lines.get(key);
 			if (link == null) {
@@ -511,12 +523,14 @@ public class RailwayService {
 			}
 			toBuild.add(plan.get());
 			built.add(key);
+			paired.put(plan.get(), pairing(link, plan.get()));
 		}
 		if (toBuild.isEmpty()) {
 			return;
 		}
 		LineBuilder.Reachable neighbours = (x, z) -> Math.abs(x - chunk.x()) <= 1 && Math.abs(z - chunk.z()) <= 1;
-		LineBuilder.build(region, chunk, toBuild, neighbours, builtWith(toBuild, built, neighbours), trackSettings);
+		LineBuilder.build(region, chunk, toBuild, neighbours, builtWith(toBuild, built, neighbours), paired,
+				trackSettings);
 		long packed = ChunkPos.pack(chunk.x(), chunk.z());
 		for (VillagePair key : built) {
 			buildState.markBuilt(packed, key);
@@ -602,6 +616,185 @@ public class RailwayService {
 						(x, z) -> others.stream().anyMatch(other -> !other.key().equals(link.key())
 								&& HaltPlanner.passesNear(other.path(), x, z, HaltPlanner.OTHER_LINE_CLEARANCE)))));
 		return cache(link, plan);
+	}
+
+	/**
+	 * Where another line runs beside a line two blocks off, at the same height and both in a tunnel, as two lines
+	 * leaving a station together may: the two share a double tunnel there, which the line with the lower key builds.
+	 * For each block 1 or -1, the other line being on the left or the right, where this line builds that tunnel, 2 or
+	 * -2 where the other one does, 0 elsewhere. Where one of the two turns away from the other in the tunnel and the
+	 * other runs on, a junction joins them: {@link LineBuilder#JUNCTION_ON} times the side of the other line marks the
+	 * middle of the junction on the line that runs on, {@link LineBuilder#JUNCTION_OFF} the corner of the one that
+	 * turns. Worked out from the plans of both lines, so every chunk agrees.
+	 */
+	private int[] pairing(Link link, TrackPlan plan) {
+		int[] cached = pairings.get(link.key());
+		if (cached != null && cached.length == plan.length()) {
+			return cached;
+		}
+		int[] paired = new int[plan.length()];
+		int[] box = bounds(plan);
+		Map<Long, Integer> own = positions(plan);
+		for (Link other : network.planner().links()) {
+			if (other.key().equals(link.key()) || !overlaps(other.path(), box)) {
+				continue;
+			}
+			Optional<TrackPlan> found = planOf(other);
+			if (found.isEmpty()) {
+				continue;
+			}
+			TrackPlan beside = found.get();
+			Map<Long, Integer> at = positions(beside);
+			boolean builds = link.key().first() < other.key().first()
+					|| link.key().first() == other.key().first() && link.key().second() < other.key().second();
+			for (int i = 0; i < plan.length(); i++) {
+				if (plan.sections()[i] != Section.TUNNEL) {
+					continue;
+				}
+				int side = sideOf(plan, i, at);
+				Integer j = side == 0 ? null : at.get(besidePosition(plan, i, side));
+				if (j != null && beside.track()[j] == plan.track()[i] && beside.sections()[j] == Section.TUNNEL) {
+					// Next to the other line's corner neither builds the double tunnel: its corner keeps an ordinary one.
+					paired[i] = builds && !nearCorner(beside, j) ? side : 2 * side;
+				}
+			}
+			for (int k = 0; k < plan.length(); k++) {
+				int side = sideOf(plan, k, at);
+				if (side != 0 && junction(plan, k, side, beside, at) >= 0) {
+					paired[k] = LineBuilder.JUNCTION_ON * side;
+				}
+			}
+			for (int k = 0; k < beside.length(); k++) {
+				int side = sideOf(beside, k, own);
+				int corner = side == 0 ? -1 : junction(beside, k, side, plan, own);
+				if (corner >= 0) {
+					paired[corner] = LineBuilder.JUNCTION_OFF;
+				}
+			}
+		}
+		pairings.put(link.key(), paired);
+		return paired;
+	}
+
+	/** Whether a line turns within two blocks of block j, as far as the cross section of a corner reaches. */
+	private static boolean nearCorner(TrackPlan plan, int j) {
+		for (int c = Math.max(0, j - 2); c <= Math.min(plan.length() - 1, j + 2); c++) {
+			if (plan.corner()[c]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Map<Long, Integer> positions(TrackPlan plan) {
+		Map<Long, Integer> at = new HashMap<>();
+		for (int i = 0; i < plan.length(); i++) {
+			at.put(ChunkPos.pack(plan.x()[i], plan.z()[i]), i);
+		}
+		return at;
+	}
+
+	/** The block a double track away from block i of a line, on its left (1) or right (-1), packed as a chunk is. */
+	private static long besidePosition(TrackPlan plan, int i, int side) {
+		Direction left = (i < plan.length() - 1 ? plan.direction(i, i + 1) : plan.direction(i - 1, i))
+				.getCounterClockWise();
+		return ChunkPos.pack(plan.x()[i] + left.getStepX() * TrackPlanner.DOUBLE_TRACK * side,
+				plan.z()[i] + left.getStepZ() * TrackPlanner.DOUBLE_TRACK * side);
+	}
+
+	/** The side of block i of a line on which a block of the other line lies a double track away, or 0. */
+	private static int sideOf(TrackPlan plan, int i, Map<Long, Integer> other) {
+		for (int side = -1; side <= 1; side += 2) {
+			if (other.containsKey(besidePosition(plan, i, side))) {
+				return side;
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Whether a junction joins two lines at block k of the line that runs on, the other line lying on {@code side} of
+	 * it: there the other line turns away, at a corner beside block k, from running beside this one. Both are in the
+	 * tunnel where the junction stands and level and straight there and one block beyond, where a portal may follow
+	 * straight away. The other line's corner, or -1.
+	 */
+	private static int junction(TrackPlan on, int k, int side, TrackPlan off, Map<Long, Integer> offAt) {
+		Integer found = offAt.get(besidePosition(on, k, side));
+		if (found == null || !off.corner()[found] || found == 0 || found == off.length() - 1) {
+			return -1;
+		}
+		int corner = found;
+		// The other line's block before its corner lies beside the block of this one before or after block k, on the
+		// double tunnel's side.
+		int parallel = -1;
+		int single = 0;
+		for (int n : new int[] {corner - 1, corner + 1}) {
+			long at = ChunkPos.pack(off.x()[n], off.z()[n]);
+			if (k > 0 && besidePosition(on, k - 1, side) == at) {
+				parallel = n;
+				single = 1;
+			} else if (k < on.length() - 1 && besidePosition(on, k + 1, side) == at) {
+				parallel = n;
+				single = -1;
+			}
+		}
+		if (parallel < 0) {
+			return -1;
+		}
+		int away = 2 * corner - parallel;
+		int beyond = TunnelTemplate.JUNCTION_RIGHT.entrance.size() - 1 - TunnelTemplate.JUNCTION_CORNER;
+		for (int t = -TunnelTemplate.JUNCTION_CORNER - 1; t <= beyond + 1; t++) {
+			int j = k + t * single;
+			boolean inside = t >= -TunnelTemplate.JUNCTION_CORNER && t <= beyond;
+			if (j < 0 || j >= on.length() || on.corner()[j] || on.track()[j] != on.track()[k]
+					|| inside && on.sections()[j] != Section.TUNNEL) {
+				return -1;
+			}
+		}
+		for (int t = -TunnelTemplate.JUNCTION_CORNER - 1; t <= TunnelTemplate.JUNCTION_TURNED_OUT + 1; t++) {
+			int j = corner + t * (away - corner);
+			boolean inside = t >= -TunnelTemplate.JUNCTION_CORNER && t <= TunnelTemplate.JUNCTION_TURNED_OUT;
+			if (j < 0 || j >= off.length() || t != 0 && off.corner()[j] || off.track()[j] != on.track()[k]
+					|| inside && off.sections()[j] != Section.TUNNEL) {
+				return -1;
+			}
+		}
+		// It turns away from this line, not across it.
+		return besideFurther(on, k, side) == ChunkPos.pack(off.x()[away], off.z()[away]) ? corner : -1;
+	}
+
+	/** The block one farther out than {@link #besidePosition}, a double track and one away. */
+	private static long besideFurther(TrackPlan plan, int i, int side) {
+		Direction left = (i < plan.length() - 1 ? plan.direction(i, i + 1) : plan.direction(i - 1, i))
+				.getCounterClockWise();
+		int across = (TrackPlanner.DOUBLE_TRACK + 1) * side;
+		return ChunkPos.pack(plan.x()[i] + left.getStepX() * across, plan.z()[i] + left.getStepZ() * across);
+	}
+
+	/** The smallest x, z and the largest x, z of a plan's blocks. */
+	private static int[] bounds(TrackPlan plan) {
+		int[] box = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+		for (int i = 0; i < plan.length(); i++) {
+			box[0] = Math.min(box[0], plan.x()[i]);
+			box[1] = Math.min(box[1], plan.z()[i]);
+			box[2] = Math.max(box[2], plan.x()[i]);
+			box[3] = Math.max(box[3], plan.z()[i]);
+		}
+		return box;
+	}
+
+	/** Whether a segment of a path comes within a double track of the box of a plan. */
+	private static boolean overlaps(List<Point> path, int[] box) {
+		int reach = TrackPlanner.DOUBLE_TRACK;
+		for (int i = 1; i < path.size(); i++) {
+			Point a = path.get(i - 1);
+			Point b = path.get(i);
+			if (Math.max(a.x(), b.x()) >= box[0] - reach && Math.min(a.x(), b.x()) <= box[2] + reach
+					&& Math.max(a.z(), b.z()) >= box[1] - reach && Math.min(a.z(), b.z()) <= box[3] + reach) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static int count(boolean a, boolean b) {
