@@ -45,7 +45,7 @@ Every village has one station just outside it, where its lines meet. Groups of v
 
 On long stretches there are halts, small brick huts by the track with a minecart dispenser, roughly one every 800 blocks. Long tunnels get one at each end.
 
-**Sea tubes are off by default.** Turn them on and a line that meets open water carries on along the sea bed in a glass tube, wide enough for two tracks, with prismarine ribs every 5 blocks standing on columns. With them off, lines stay away from the ocean and only bridge narrow straits.
+**Sea tubes are off by default.** If you enable them, a line that meets open water carries on along the sea bed in a glass tube covering two tracks, with prismarine ribs every 5 blocks standing on columns. With them off, lines stay away from the ocean and only bridge narrow straits.
 
 <p align="center"><img src="art/screenshots/sea-tube-inside.jpg" alt="Inside a sea tube" width="100%"><br><em>Inside a sea tube.</em></p>
 
