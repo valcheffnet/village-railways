@@ -8,7 +8,7 @@ Villages in Minecraft sit hundreds or sometimes thousands of blocks apart with n
 
 It runs on the server. Players join with a normal vanilla client and don't need to install anything.
 
-Nothing is released yet. This branch is Minecraft 26.3; the 26.2, 26.1 and 1.21.11 versions are on their own branches.
+This branch is Minecraft 26.3; the 26.2, 26.1 and 1.21.11 versions are on their own branches.
 
 ## Screenshots
 
