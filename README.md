@@ -1,100 +1,97 @@
 # Village Railways
 
-![A western station at night](art/banner.jpg)
+![A large station at night](art/banner.jpg)
 
 **Server-side. Vanilla clients welcome.**
 
-Villages in Minecraft sit hundreds of blocks apart with nothing between them. This mod lays minecart railways from one village to the next while the world generates: stations outside the villages, open cuts through hills, tunnels through mountains, bridges over rivers and ravines, and if you want them, glass tubes under the sea. Everything is built from vanilla blocks, so the lines stay when the mod is gone.
+Villages in Minecraft sit hundreds or sometimes thousands of blocks apart with nothing but wilderness between them. Village Railways joins them with minecart railways. Each village gets lines to up to three of its nearest neighbours. Everything is vanilla blocks, so the railways stay in the world even if you remove the mod later.
 
-The whole mod runs on the server. Players join with a normal vanilla client and install nothing.
+It runs on the server. Players join with a normal vanilla client and don't need to install anything.
 
-Not released yet. The code here is for Minecraft 26.3; builds for 26.2, 26.1 and 1.21.11 live on their own branches.
+This branch is Minecraft 26.3; the 26.2, 26.1 and 1.21.11 versions are on their own branches.
 
 ## Screenshots
 
-<p align="center"><img src="art/screenshots/station-platform.jpg" alt="Station platform" width="100%"><br><em>The platform of a western station.</em></p>
+<p align="center"><img src="art/screenshots/station-platform.jpg" alt="Station platform" width="100%"><br><em>The platform of a large station.</em></p>
 
 <table>
 <tr>
-<td width="50%"><img src="art/screenshots/station-lake.jpg" alt="A station by a lake"><br><em>A station by the lake, just outside the village.</em></td>
+<td width="50%"><img src="art/screenshots/station-lake.jpg" alt="A station by a lake"><br><em>A station by the lake, at the edge of the village.</em></td>
 <td width="50%"><img src="art/screenshots/bridge-lake.jpg" alt="A bridge over a lake"><br><em>A double track bridge at night.</em></td>
 </tr>
 <tr>
 <td><img src="art/screenshots/tunnel.jpg" alt="A tunnel"><br><em>Inside a long tunnel.</em></td>
-<td><img src="art/screenshots/cave-bridge-deck.jpg" alt="A bridge through a cave"><br><em>Where a tunnel breaks into a cave, the line crosses it on a bridge.</em></td>
+<td><img src="art/screenshots/double-tunnel.jpg" alt="A double track tunnel"><br><em>A double line in a tunnel.</em></td>
 </tr>
 <tr>
-<td><img src="art/screenshots/cave-bridge.jpg" alt="A cave bridge from below"><br><em>The same kind of bridge from the cave floor.</em></td>
+<td><img src="art/screenshots/cave-bridge-deck.jpg" alt="A bridge through a cave"><br><em>Where a tunnel breaks into a cave, the line crosses it on a bridge.</em></td>
+<td><img src="art/screenshots/cave-bridge.jpg" alt="A cave bridge from below"><br><em>A cave bridge seen from the floor.</em></td>
+</tr>
+<tr>
 <td><img src="art/screenshots/halt-tunnel.jpg" alt="A halt by a tunnel"><br><em>A halt at the mouth of a long tunnel.</em></td>
+<td><img src="art/screenshots/halt.jpg" alt="A halt at sunset"><br><em>A halt in the evening.</em></td>
 </tr>
 <tr>
 <td><img src="art/screenshots/sea-tube.jpg" alt="A glass tube under the sea"><br><em>A glass tube on the sea bed.</em></td>
 <td><img src="art/screenshots/sea-tube-entrance.jpg" alt="Where a tube leaves the shore"><br><em>Where the tube leaves the shore.</em></td>
 </tr>
-<tr>
-<td><img src="art/screenshots/halt.jpg" alt="A halt at sunset"><br><em>A halt on open track.</em></td>
-<td><img src="art/screenshots/station-map.jpg" alt="Map of the network in a station"><br><em>Every western station has a map of the network on its wall.</em></td>
-</tr>
 </table>
-
-## How the lines are planned
-
-When a world starts, the mod works out where villages will generate, from the seed alone, before any of that land exists. It then picks which villages to join: each village gets up to three lines to its nearest neighbours, and groups of villages that would end up on their own are joined to the rest by longer trunk lines. Lines run in long straights, and a line at a slant goes as a staircase of straights and side steps.
-
-The planning reads only the world generator, never the chunks, so it runs ahead of the players. By the time a chunk generates, the lines through it are known, and the chunk comes out with its piece of railway already in it. Nothing gets built later over land you have already seen.
-
-Lines keep off the buildings of the villages they serve, away from other villages, and clear of other structures on the surface.
 
 ## What gets built
 
-The track stays level. Shallow hills get an open cut, deeper ones a tunnel lined with cobblestone and oak frames and lit with copper lanterns. Rivers, ravines and drops are crossed on bridges with pillars and railings, and where a tunnel breaks into a cave, the line crosses the cave on a bridge of its own. Powered rails keep the cart at speed, run by redstone torches hidden under the track.
+The track stays level wherever it can. A low hill gets an open cut, a mountain gets a tunnel with cobblestone walls, oak frames and copper lanterns, and rivers and ravines get bridges with pillars and railings. If a tunnel breaks into a cave on the way, the line crosses the cave on a bridge. The powered rails run off redstone torches hidden under the track, so you won't see torches every few blocks.
 
-Each village gets one station, a straight track just outside it where its lines meet. Where a trunk line comes in, the station can be a western station: a big timber house beside two tracks, with seats, two minecart dispensers and a map of the network on the wall. Trunk lines and bridges have double track, and every switch has a lever.
+Every village has one station just outside it, where its lines meet. Groups of villages that would otherwise be cut off from the rest are joined by a longer double line, with two tracks all the way, and where one of those comes in, the station may be a large one: a big timber house by the tracks, with seats inside, two dispensers full of minecarts and a map of the network on the wall. Bridges are double track on every line, and every switch comes with a lever.
 
-Long stretches get halts, a small brick hut on a platform with a minecart dispenser. There is about one every 800 blocks, and one at each end of a long tunnel.
+On long stretches there are halts, small brick huts by the track with a minecart dispenser, roughly one every 800 blocks. Long tunnels get one at each end.
 
-Sea tubes are off by default. With them on, a line that would cross open water runs along the sea bed in a glass tube wide enough for two tracks, with prismarine ribs every 5 blocks on columns down to the bottom. Without them, lines keep off the ocean and bridge only narrow straits.
+Sea tubes are off by default. Turn them on and a line that meets open water carries on along the sea bed in a glass tube, wide enough for two tracks, with prismarine ribs every 5 blocks standing on columns. With them off, lines stay away from the ocean and only bridge narrow straits.
 
 ## Old worlds
 
-By default lines go only through land that does not exist yet, so nothing a player built is ever touched. In a world that has been played for a while, lines appear in the land you explore from now on.
+Out of the box, lines only go through land that hasn't been generated yet, so nothing anyone has built gets touched. Add the mod to a world you've played for months and the railways show up in the land you explore from then on.
 
-To lay lines through the land that already exists as well, an operator can open it: from the settings screen ("Open the existing land to lines...", then "Backup and Build") or with `/villagerailways openland`. At the next start of the server the world is backed up into the `backups` folder, the lines are planned through the old land, and they are built there as it loads. They can cut through houses, farms and redstone. Only the backup can undo it.
+If you want lines through the old land too, an operator can ask for it in the settings screen ("Open the existing land to lines...", then "Backup and Build") or with `/villagerailways openland`. On the next server start the world is backed up into the `backups` folder first, then the lines are planned through the old land and built as it loads. Be warned that they will cut through whatever is in the way, houses and farms and redstone included, and only the backup can undo that.
 
 ## Maps
 
-`/villagerailways mapitem` gives you a vanilla map with the whole network on it, reaching much farther than a normal map. `/villagerailways mapwall` gives a set of maps for a wall of item frames. The western stations hang such maps on their walls.
+`/villagerailways mapitem` gives you a vanilla map of the network that reaches much farther than a normal map would. `/villagerailways mapwall` gives you a set of them to hang as a wall in item frames, the same kind the large stations have.
 
-<p align="center"><img src="art/screenshots/network-map.png" alt="A map of the network" width="50%"></p>
+<table>
+<tr>
+<td width="50%"><img src="art/screenshots/station-map.jpg" alt="Map of the network in a station"><br><em>A map of the network on the wall of a large station.</em></td>
+<td width="50%"><img src="art/screenshots/network-map.png" alt="A map of the network"><br><em>A network map from <code>/villagerailways mapitem</code>.</em></td>
+</tr>
+</table>
 
 ## Install
 
-Minecraft 26.3, on Fabric, NeoForge or Paper:
+There is a jar for Fabric, one for NeoForge and a plugin for Paper, all for Minecraft 26.3:
 
-- Fabric needs Fabric Loader 0.19 or newer and Fabric API. Mod Menu is optional, for the settings screen.
+- Fabric needs Fabric Loader 0.19 or newer and Fabric API. Mod Menu is optional and only gives you the settings screen.
 - NeoForge needs NeoForge 26.3 and nothing else.
-- Paper takes the plugin jar, for Paper 26.3.
+- Paper needs Paper 26.3.
 
-Drop the jar into the server's `mods` folder (`plugins` on Paper). Players join with a vanilla client either way. In singleplayer it works the same when installed on the client. Java 25 is needed, as for Minecraft 26.3 itself.
+Put the jar in the server's `mods` folder, or `plugins` on Paper. For singleplayer, install it on the client like any other mod.
 
-The same mod for 26.2, 26.1 and 1.21.11 is on the `mc-26.2`, `mc-26.1` and `mc-1.21.11` branches. On those versions a first start takes longer, because the older world generator is slower to read; expect about 40 seconds before the server is up.
+The 26.2, 26.1 and 1.21.11 versions are on the `mc-26.2`, `mc-26.1` and `mc-1.21.11` branches. The first start of a world takes a bit longer on those, around 40 seconds.
 
 ## Settings
 
-Players with the mod on their client get a settings screen: from Mod Menu on Fabric, or the Config button in the mod list on NeoForge. On a server that runs the mod, admins (permission level 3) see and change the server's settings there; in singleplayer the world's owner always can. When you create a singleplayer world, the Create World screen has a switch for the sea tubes.
+With the mod on your client you get a settings screen, through Mod Menu on Fabric or the Config button in the NeoForge mod list. On a server that runs the mod, admins (permission level 3) can change the server's settings from there, and in singleplayer the world's owner always can. The sea tubes also have their own switch on the Create World screen.
 
-The settings are in `config/village_railways.properties` (`plugins/VillageRailways` on Paper), with a comment for each one. They apply from the next start of the server.
+Everything is in `config/village_railways.properties` (`plugins/VillageRailways` on Paper), with a comment on each line. Changes apply on the next server start.
 
 | Setting | Default | |
 |---|---|---|
 | `maxLinks` | `3` | Most lines one village may have, 1 to 3. |
-| `maxLength` | `1200` | Longest line between two villages, in blocks. Trunk lines may be longer. |
+| `maxLength` | `1200` | Longest line between two villages, in blocks. Double lines may be longer. |
 | `minRun`, `maxRun` | `32`, `64` | The straight and the side step of a line at a slant. |
 | `cutDepth` | `5` | Where the ground is higher than this over the rail, the line goes into a tunnel. |
 | `pillarSpacing` | `9` | Blocks between the pillars of a bridge in the open. |
 | `seaTubes` | `0` | `1` crosses seas in glass tubes. |
 
-Lines already planned keep their path. `cutDepth`, `pillarSpacing` and `seaTubes` are kept by each world from its first start, because a half built line has to come out the same at every start; changing them affects new worlds only.
+Lines that are already planned keep their route. A world also keeps the `cutDepth`, `pillarSpacing` and `seaTubes` it was first started with, so changing those only matters for new worlds.
 
 ## Commands
 
@@ -108,7 +105,7 @@ All commands need operator permission (level 2).
 | `/villagerailways villages [radius]` | The villages the mod expects around you. |
 | `/villagerailways openland` | Opens the existing land to lines at the next start; `openland cancel` calls it off. |
 | `/villagerailways speed` | Shows your minecart's speed above the hotbar. |
-| `/villagerailways network`, `map`, `profile`, `build`, `station`, `verify` | Tools for testing: they plan, draw or build lines on demand. `build` and `verify` generate chunks, so keep them to test worlds. |
+| `/villagerailways network`, `map`, `profile`, `build`, `station`, `verify` | Testing tools that plan, draw or build lines on demand. `build` and `verify` generate chunks, so use them only in test worlds. |
 
 ## Building from source
 
@@ -118,11 +115,11 @@ All commands need operator permission (level 2).
 ./gradlew -p paper build
 ```
 
-The Fabric jar ends up in `build/libs`, the NeoForge jar in `neoforge/build/libs` and the Paper jar in `paper/build/libs`. All three are built from the same sources.
+All three come from the same sources. The jars end up in `build/libs`, `neoforge/build/libs` and `paper/build/libs`.
 
 ## Feedback
 
-Bugs, ideas and screenshots of your lines go to [Discord](https://discord.com/invite/X6yxJpk9Fz) or the [issues](https://github.com/valcheffnet/village-railways/issues) here. For a bug, the seed and the coordinates help a lot.
+Found a bug or have an idea? Come to [Discord](https://discord.com/invite/X6yxJpk9Fz) or open an [issue](https://github.com/valcheffnet/village-railways/issues). If it's a bug, the seed and the coordinates help a lot, and screenshots of your lines are always welcome.
 
 ## License
 
