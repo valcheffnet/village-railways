@@ -21,7 +21,7 @@ Not released yet. The code here is for Minecraft 26.3; builds for 26.2, 26.1 and
 </tr>
 <tr>
 <td><img src="art/screenshots/tunnel.jpg" alt="A tunnel"><br><em>Inside a long tunnel.</em></td>
-<td><img src="art/screenshots/double-tunnel.jpg" alt="A double track tunnel"><br><em>A trunk line runs on double track, tunnels included.</em></td>
+<td><img src="art/screenshots/double-tunnel.jpg" alt="A double track tunnel"><br><em>A double line has two tracks all the way, tunnels included.</em></td>
 </tr>
 <tr>
 <td><img src="art/screenshots/cave-bridge-deck.jpg" alt="A bridge through a cave"><br><em>Where a tunnel breaks into a cave, the line crosses it on a bridge.</em></td>
@@ -39,7 +39,7 @@ Not released yet. The code here is for Minecraft 26.3; builds for 26.2, 26.1 and
 
 ## How the lines are planned
 
-When a world starts, the mod works out where villages will generate, from the seed alone, before any of that land exists. It then picks which villages to join: each village gets up to three lines to its nearest neighbours, and groups of villages that would end up on their own are joined to the rest by longer trunk lines. Lines run in long straights, and a line at a slant goes as a staircase of straights and side steps.
+When a world starts, the mod works out where villages will generate, from the seed alone, before any of that land exists. It then picks which villages to join: each village gets up to three lines to its nearest neighbours, and groups of villages that would end up on their own are joined to the rest by longer double lines. Lines run in long straights, and a line at a slant goes as a staircase of straights and side steps.
 
 The planning reads only the world generator, never the chunks, so it runs ahead of the players. By the time a chunk generates, the lines through it are known, and the chunk comes out with its piece of railway already in it. Nothing gets built later over land you have already seen.
 
@@ -49,7 +49,7 @@ Lines keep off the buildings of the villages they serve, away from other village
 
 The track stays level. Shallow hills get an open cut, deeper ones a tunnel lined with cobblestone and oak frames and lit with copper lanterns. Rivers, ravines and drops are crossed on bridges with pillars and railings, and where a tunnel breaks into a cave, the line crosses the cave on a bridge of its own. Powered rails keep the cart at speed, run by redstone torches hidden under the track.
 
-Each village gets one station, a straight track just outside it where its lines meet. Where a trunk line comes in, the station can be a large station: a big timber house beside two tracks, with seats, two minecart dispensers and a map of the network on the wall. Trunk lines and bridges have double track, and every switch has a lever.
+Each village gets one station, a straight track just outside it where its lines meet. Where a double line comes in, the station can be a large station: a big timber house beside two tracks, with seats, two minecart dispensers and a map of the network on the wall. Double lines have two tracks all the way, bridges on any line do too, and every switch has a lever.
 
 Long stretches get halts, a small brick hut on a platform with a minecart dispenser. There is about one every 800 blocks, and one at each end of a long tunnel.
 
@@ -93,7 +93,7 @@ The settings are in `config/village_railways.properties` (`plugins/VillageRailwa
 | Setting | Default | |
 |---|---|---|
 | `maxLinks` | `3` | Most lines one village may have, 1 to 3. |
-| `maxLength` | `1200` | Longest line between two villages, in blocks. Trunk lines may be longer. |
+| `maxLength` | `1200` | Longest line between two villages, in blocks. Double lines may be longer. |
 | `minRun`, `maxRun` | `32`, `64` | The straight and the side step of a line at a slant. |
 | `cutDepth` | `5` | Where the ground is higher than this over the rail, the line goes into a tunnel. |
 | `pillarSpacing` | `9` | Blocks between the pillars of a bridge in the open. |
