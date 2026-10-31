@@ -98,6 +98,10 @@ The Paper jar also runs on forks of Paper such as Purpur. It does not load on Sp
 
 The generation is optimized to be fast and accurate, and it shows its progress in the log and on the loading screen. Keep in mind that, because of some limitations of Minecraft versions before 26.3, the first start of a world takes a bit longer there (around 40 seconds).
 
+## Other world gen mods
+
+Which world gen mods have been tested with Village Railways, and what happens where they meet, is in [COMPATIBILITY.md](COMPATIBILITY.md).
+
 ## Settings
 
 With the mod on your client you get a settings screen, through Mod Menu on Fabric or the Config button in the NeoForge mod list. On a server that runs the mod, admins (permission level 3) can change the server's settings from there, and in singleplayer the world's owner always can. The sea tubes also have their own switch on the Create World screen.
