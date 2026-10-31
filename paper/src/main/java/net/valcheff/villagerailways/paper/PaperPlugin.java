@@ -17,6 +17,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.WorldGenLevel;
 import net.valcheff.villagerailways.Platform;
 import net.valcheff.villagerailways.VillageRailways;
 import org.bukkit.craftbukkit.CraftWorld;
@@ -65,6 +66,23 @@ public final class PaperPlugin extends JavaPlugin implements Listener {
 			@Override
 			public boolean paper() {
 				return true;
+			}
+
+			@Override
+			public void quietly(WorldGenLevel level, Runnable build) {
+				if (!(level instanceof ServerLevel server)) {
+					build.run();
+					return;
+				}
+				// Paper's own switch, meant for undoing a cancelled placement: a removed block does not react, and
+				// its block entity just goes.
+				boolean outer = server.isBlockPlaceCancelled;
+				server.isBlockPlaceCancelled = true;
+				try {
+					build.run();
+				} finally {
+					server.isBlockPlaceCancelled = outer;
+				}
 			}
 		});
 		VillageRailways.serverStarting(MinecraftServer.getServer());

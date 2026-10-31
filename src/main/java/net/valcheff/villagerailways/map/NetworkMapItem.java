@@ -180,7 +180,7 @@ public final class NetworkMapItem {
 		tag.putBoolean("trackingPosition", true);
 		tag.putBoolean("unlimitedTracking", false);
 		tag.putBoolean("locked", true);
-		return MapItemSavedData.CODEC.parse(NbtOps.INSTANCE, tag).getOrThrow();
+		return MapItemSavedData.load(tag, level.registryAccess());
 	}
 
 	/** The map's pixels, addressed by block position. */

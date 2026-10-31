@@ -10,7 +10,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -31,7 +31,7 @@ public final class ConfigSync {
 
 	/** The config screen asks for the server's settings. */
 	public record Request() implements CustomPacketPayload {
-		public static final Type<Request> TYPE = new Type<>(Identifier.fromNamespaceAndPath(VillageRailways.MOD_ID,
+		public static final Type<Request> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
 				"config_request"));
 		public static final StreamCodec<RegistryFriendlyByteBuf, Request> CODEC = StreamCodec.unit(new Request());
 
@@ -48,7 +48,7 @@ public final class ConfigSync {
 	 */
 	public record State(List<Integer> values, List<Integer> world, boolean openLand, boolean canEdit)
 			implements CustomPacketPayload {
-		public static final Type<State> TYPE = new Type<>(Identifier.fromNamespaceAndPath(VillageRailways.MOD_ID,
+		public static final Type<State> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
 				"config_state"));
 		public static final StreamCodec<RegistryFriendlyByteBuf, State> CODEC = StreamCodec.composite(INTS,
 				State::values, INTS, State::world, ByteBufCodecs.BOOL, State::openLand, ByteBufCodecs.BOOL,
@@ -62,7 +62,7 @@ public final class ConfigSync {
 
 	/** New settings from the config screen, in {@link RailwayConfig.Setting} order. */
 	public record Save(List<Integer> values) implements CustomPacketPayload {
-		public static final Type<Save> TYPE = new Type<>(Identifier.fromNamespaceAndPath(VillageRailways.MOD_ID,
+		public static final Type<Save> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
 				"config_save"));
 		public static final StreamCodec<RegistryFriendlyByteBuf, Save> CODEC = StreamCodec.composite(INTS,
 				Save::values, Save::new);
@@ -75,7 +75,7 @@ public final class ConfigSync {
 
 	/** The config screen asks for the world's existing land to open to lines at the next start, or takes that back. */
 	public record OpenLand(boolean open) implements CustomPacketPayload {
-		public static final Type<OpenLand> TYPE = new Type<>(Identifier.fromNamespaceAndPath(VillageRailways.MOD_ID,
+		public static final Type<OpenLand> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
 				"open_land"));
 		public static final StreamCodec<RegistryFriendlyByteBuf, OpenLand> CODEC = StreamCodec.composite(
 				ByteBufCodecs.BOOL, OpenLand::open, OpenLand::new);
@@ -128,7 +128,7 @@ public final class ConfigSync {
 	}
 
 	static boolean canEdit(MinecraftServer server, ServerPlayer player) {
-		return server.isSingleplayerOwner(player.nameAndId())
-				|| Commands.hasPermission(Commands.LEVEL_ADMINS).test(player.createCommandSourceStack());
+		return server.isSingleplayerOwner(player.getGameProfile())
+				|| player.hasPermissions(Commands.LEVEL_ADMINS);
 	}
 }

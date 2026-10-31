@@ -12,7 +12,6 @@ import java.util.function.IntPredicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.ChunkPos;
@@ -22,17 +21,16 @@ import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.FaceAttachedHorizontalDirectionalBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.PipeBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.RedstoneWallTorchBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.WallSignBlock;
 import net.minecraft.world.level.block.WallTorchBlock;
-import net.minecraft.world.level.block.WeatheringCopper;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
@@ -139,10 +137,13 @@ public final class LineBuilder {
 	 * How every block is written: sent to players, with no shape or neighbour updates, no drops, no spilled containers
 	 * and no reaction of the block to being placed. The builder sets each block's final state itself, so a chunk comes
 	 * out the same whether it is generating or loaded and in whatever order its neighbours are built; nothing it
-	 * replaces or takes away drops as an item, and a powered rail keeps the power it is placed with.
+	 * replaces or takes away drops as an item, and a powered rail keeps the power it is placed with. The flags cover
+	 * the updates and the drops; {@link QuietWrites}, on while a chunk is built, covers the blocks' reactions.
 	 */
-	private static final int WRITE = Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS;
+	private static final int WRITE = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS
+			| QuietWrites.NO_PLACE;
 	private static final BlockState AIR = Blocks.AIR.defaultBlockState();
+	private static final BlockState LANTERN = Blocks.LANTERN.defaultBlockState();
 	private static final BlockState STONE = Blocks.COBBLESTONE.defaultBlockState();
 	private static final BlockState DECK = Blocks.OAK_PLANKS.defaultBlockState();
 	private static final BlockState BRICKS = Blocks.STONE_BRICKS.defaultBlockState();
@@ -162,7 +163,7 @@ public final class LineBuilder {
 	 * track at z {@value #WESTERN_TRACK_Z} and its second track two blocks lower, the rails one block up, the middle of
 	 * the station at x {@value #WESTERN_MIDDLE_X}, the house towards larger z.
 	 */
-	private static final Identifier WESTERN_STATION = Identifier.fromNamespaceAndPath("village_railways", "western_station");
+	private static final String WESTERN_STATION = "western_station";
 	private static final int WESTERN_MIDDLE_X = 18;
 	private static final int WESTERN_TRACK_Z = 4;
 	private static final int WESTERN_RAIL_Y = 1;
@@ -295,7 +296,7 @@ public final class LineBuilder {
 	 */
 	public static void build(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> plans, Reachable reachable,
 			Built built, Map<TrackPlan, int[]> paired, TrackSettings settings) {
-		new LineBuilder(level, chunk, plans, reachable, built, paired, settings).build();
+		QuietWrites.run(level, () -> new LineBuilder(level, chunk, plans, reachable, built, paired, settings).build());
 	}
 
 	private void build() {
@@ -491,7 +492,7 @@ public final class LineBuilder {
 
 	/** Turns the kelp and sea grass from a block up to water, where a tube cut them off from the sea bed. */
 	private void clearSeaPlants(int x, int fromY, int z) {
-		for (int y = fromY; y < level.getMaxY(); y++) {
+		for (int y = fromY; y < level.getMaxBuildHeight() - 1; y++) {
 			BlockState state = level.getBlockState(pos.set(x, y, z));
 			if (!state.is(Blocks.KELP) && !state.is(Blocks.KELP_PLANT) && !state.is(Blocks.SEAGRASS)
 					&& !state.is(Blocks.TALL_SEAGRASS)) {
@@ -609,7 +610,7 @@ public final class LineBuilder {
 			int minZ = chunk.getMinBlockZ() - 16;
 			int maxZ = chunk.getMaxBlockZ() + 16;
 			BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos();
-			StructureFile western = StructureFile.load(WESTERN_STATION.getPath());
+			StructureFile western = StructureFile.load(WESTERN_STATION);
 			for (TrackPlan line : plans) {
 				if (line.western()) {
 					int middle = line.length() / 2;
@@ -1390,7 +1391,7 @@ public final class LineBuilder {
 		}
 		set(x, track - 1, z, STONE);
 		if (distance == 0 && i % settings.pillarSpacing() == 0) {
-			for (int y = track - 2; y > level.getMinY(); y--) {
+			for (int y = track - 2; y > level.getMinBuildHeight(); y--) {
 				BlockState state = level.getBlockState(pos.set(x, y, z));
 				if (state.isSolid() && state.getFluidState().isEmpty()) {
 					break;
@@ -1428,7 +1429,7 @@ public final class LineBuilder {
 			return;
 		}
 		RailShape shape = railShape(plan, i);
-		boolean slope = shape.isSlope();
+		boolean slope = shape.isAscending();
 		Direction branch = branchSide(i);
 		if (branch != null && !isCurve(shape)) {
 			// A switch starts the way the game shapes a rail with three neighbours and no power, towards the south or the
@@ -1502,7 +1503,7 @@ public final class LineBuilder {
 		} else if (section != Section.BRIDGE && section != Section.TUNNEL && section != Section.TUBE
 				&& templated(i) == null && !isWesternStation() && isLampSpot(i, LAMP_SPACING / 2)) {
 			placePost(x + lit.getStepX(), track, z + lit.getStepZ(),
-					Blocks.COPPER_LANTERN.unaffected().defaultBlockState());
+					LANTERN);
 		}
 	}
 
@@ -1512,15 +1513,12 @@ public final class LineBuilder {
 	 * own rails are left out; the station lays its rails, with their powered rails, itself.
 	 */
 	private void placeWesternHouse() {
-		StructureTemplate house = level.getLevel().getStructureManager().get(WESTERN_STATION).orElse(null);
-		if (house == null) {
-			return;
-		}
+		StructureTemplate house = StructureFile.template(WESTERN_STATION);
 		int middle = plan.length() / 2;
 		Direction out = plan.direction(middle, middle + 1).getCounterClockWise();
 		StructurePlaceSettings settings = westernSettings(out)
-				.setBoundingBox(new BoundingBox(chunk.getMinBlockX(), level.getMinY(), chunk.getMinBlockZ(), chunk.getMaxBlockX(),
-						level.getMaxY(), chunk.getMaxBlockZ()));
+				.setBoundingBox(new BoundingBox(chunk.getMinBlockX(), level.getMinBuildHeight(), chunk.getMinBlockZ(), chunk.getMaxBlockX(),
+						level.getMaxBuildHeight() - 1, chunk.getMaxBlockZ()));
 		BlockPos origin = westernOrigin(plan, middle);
 		BoundingBox box = house.getBoundingBox(settings, origin);
 		if (box.maxX() < chunk.getMinBlockX() || box.minX() > chunk.getMaxBlockX() || box.maxZ() < chunk.getMinBlockZ()
@@ -1719,7 +1717,7 @@ public final class LineBuilder {
 				int dx = second.x()[end] - plan.x()[i];
 				int dz = second.z()[end] - plan.z()[i];
 				if (second.beside()[end] == i && Math.abs(dx) + Math.abs(dz) == 1) {
-					return new Turnout(Direction.getNearest(dx, 0, dz, back), end == 0 ? back : back.getOpposite());
+					return new Turnout(Direction.getNearest(dx, 0, dz), end == 0 ? back : back.getOpposite());
 				}
 			}
 		}
@@ -1749,7 +1747,7 @@ public final class LineBuilder {
 	private boolean hasTorch(int i) {
 		RailShape shape = railShape(plan, i);
 		// Never at the end of a line, where it meets its station track, nor on a switch.
-		if (i == 0 || i == plan.length() - 1 || isCurve(shape) || shape.isSlope() || branchSide(i) != null
+		if (i == 0 || i == plan.length() - 1 || isCurve(shape) || shape.isAscending() || branchSide(i) != null
 				|| turnout(i) != null) {
 			return false;
 		}
@@ -1764,7 +1762,7 @@ public final class LineBuilder {
 	/** Whether block i is the flat block at the lower end of a ramp, beside its first sloping rail. */
 	private boolean isRampFoot(int i) {
 		for (int j : new int[] {i - 1, i + 1}) {
-			if (j >= 0 && j < plan.length() && plan.track()[j] == plan.track()[i] && railShape(plan, j).isSlope()) {
+			if (j >= 0 && j < plan.length() && plan.track()[j] == plan.track()[i] && railShape(plan, j).isAscending()) {
 				return true;
 			}
 		}
@@ -1794,7 +1792,7 @@ public final class LineBuilder {
 
 	private boolean fitsPost(int i) {
 		RailShape shape = railShape(plan, i);
-		return !shape.isSlope() && !isCurve(shape) && !hasTorch(i);
+		return !shape.isAscending() && !isCurve(shape) && !hasTorch(i);
 	}
 
 	/** Position of block i along the axis it runs on. */
@@ -1877,21 +1875,6 @@ public final class LineBuilder {
 				set(x + side.getStepX(), track - 2, z + side.getStepZ(), STONE);
 			}
 		}
-	}
-
-	/**
-	 * A copper lantern for a railing. Over a bridge in the open each one has weathered on its own, so they stand at
-	 * every stage from bright copper to green; the stage comes from the position, so every chunk agrees.
-	 */
-	private static BlockState railingLantern(int x, int z, boolean weathered) {
-		WeatheringCopper.WeatherState[] stages = WeatheringCopper.WeatherState.values();
-		int stage = weathered ? Math.floorMod(x * 73856093 ^ z * 19349663, stages.length) : 0;
-		return (switch (stages[stage]) {
-			case UNAFFECTED -> Blocks.COPPER_LANTERN.unaffected();
-			case EXPOSED -> Blocks.COPPER_LANTERN.exposed();
-			case WEATHERED -> Blocks.COPPER_LANTERN.weathered();
-			case OXIDIZED -> Blocks.COPPER_LANTERN.oxidized();
-		}).defaultBlockState();
 	}
 
 	/** A torch beside the rail. A post that stood there gives way, so nothing stands on a torch. */
@@ -2039,7 +2022,7 @@ public final class LineBuilder {
 			}
 			set(railingX, track, railingZ, fence(RAILING, back ? forward.getOpposite() : null, ahead ? forward : null));
 			if (scattered ? isScatteredLantern(i, railingX, railingZ) : isRailingLantern(i)) {
-				placeIfFree(railingX, track + 1, railingZ, railingLantern(railingX, railingZ, isOpenBridge(i)));
+				placeIfFree(railingX, track + 1, railingZ, LANTERN);
 			}
 		}
 	}
@@ -2089,7 +2072,7 @@ public final class LineBuilder {
 			return false;
 		}
 		RailShape shape = railShape(plan, i);
-		return !isCurve(shape) && !shape.isSlope() && !hasFrame(i) && (isShortDeck(i) || isOpenBridge(i));
+		return !isCurve(shape) && !shape.isAscending() && !hasFrame(i) && (isShortDeck(i) || isOpenBridge(i));
 	}
 
 	/**
@@ -2117,7 +2100,7 @@ public final class LineBuilder {
 				placeIfFree(fx, track + 2, fz, fence(FENCE, back ? forward.getOpposite() : null, ahead ? forward : null));
 			} else if (at == 0) {
 				if (isFrameLantern(i)) {
-					placeIfFree(fx, track + 2, fz, Blocks.COPPER_LANTERN.unaffected().defaultBlockState()
+					placeIfFree(fx, track + 2, fz, LANTERN
 							.setValue(BlockStateProperties.HANGING, true));
 				}
 			} else {
@@ -2147,7 +2130,7 @@ public final class LineBuilder {
 		BlockState state = unjoined;
 		for (Direction direction : joined) {
 			if (direction != null) {
-				state = state.setValue(CrossCollisionBlock.PROPERTY_BY_DIRECTION.get(direction), true);
+				state = state.setValue(PipeBlock.PROPERTY_BY_DIRECTION.get(direction), true);
 			}
 		}
 		return state;
@@ -2275,7 +2258,7 @@ public final class LineBuilder {
 
 	/** A lantern hanging from the ceiling, or standing on the floor where a cave leaves no ceiling. */
 	private void hangLantern(int x, int track, int z) {
-		BlockState lantern = Blocks.COPPER_LANTERN.unaffected().defaultBlockState();
+		BlockState lantern = LANTERN;
 		boolean ceiling = level.getBlockState(pos.set(x, track + 3, z)).isSolid();
 		if (ceiling) {
 			placeIfFree(x, track + 2, z, lantern.setValue(BlockStateProperties.HANGING, true));
@@ -2391,7 +2374,7 @@ public final class LineBuilder {
 	/** What hangs off or grows on trees: leaves, vines, cocoa, shelf mushrooms, lichen and hanging moss. */
 	private static boolean isLeafy(BlockState state) {
 		return state.is(BlockTags.LEAVES) || state.is(Blocks.VINE) || state.is(Blocks.COCOA)
-				|| state.is(Blocks.GLOW_LICHEN) || state.is(Blocks.PALE_HANGING_MOSS);
+				|| state.is(Blocks.GLOW_LICHEN);
 	}
 
 	private static boolean isStalk(BlockState state) {
@@ -2526,14 +2509,18 @@ public final class LineBuilder {
 	 */
 	private static boolean isFitting(BlockState state) {
 		return state.is(BlockTags.FENCES) || state.is(BlockTags.WALLS) || state.is(BlockTags.FENCE_GATES)
-				|| state.is(BlockTags.TRAPDOORS) || state.is(BlockTags.ALL_SIGNS) || state.is(BlockTags.BARS)
-				|| state.is(BlockTags.CHAINS) || state.is(BlockTags.LANTERNS) || state.is(Blocks.REDSTONE_LAMP)
+				|| state.is(BlockTags.TRAPDOORS) || state.is(BlockTags.ALL_SIGNS) || state.is(Blocks.IRON_BARS)
+				|| state.is(Blocks.CHAIN) || isLantern(state) || state.is(Blocks.REDSTONE_LAMP)
 				|| state.is(Blocks.DAYLIGHT_DETECTOR);
 	}
 
 	/** A lantern or chain hanging from above, which what it hangs from holds up. */
 	private static boolean isHanging(BlockState state) {
-		return state.is(BlockTags.CHAINS) || state.is(BlockTags.LANTERNS) && state.getValue(LanternBlock.HANGING);
+		return state.is(Blocks.CHAIN) || isLantern(state) && state.getValue(LanternBlock.HANGING);
+	}
+
+	private static boolean isLantern(BlockState state) {
+		return state.is(Blocks.LANTERN) || state.is(Blocks.SOUL_LANTERN);
 	}
 
 	/** Takes out a post whose ground was cut away, with everything on it and hanging from it. */
@@ -2637,7 +2624,7 @@ public final class LineBuilder {
 		BlockState joined = fence;
 		BlockPos.MutableBlockPos beside = new BlockPos.MutableBlockPos();
 		for (Direction side : Direction.Plane.HORIZONTAL) {
-			BooleanProperty property = CrossCollisionBlock.PROPERTY_BY_DIRECTION.get(side);
+			BooleanProperty property = PipeBlock.PROPERTY_BY_DIRECTION.get(side);
 			if (there.is(BlockTags.WOODEN_FENCES) && there.getValue(property)) {
 				joined = joined.setValue(property, true);
 			}
@@ -2647,7 +2634,7 @@ public final class LineBuilder {
 				continue;
 			}
 			joined = joined.setValue(property, true);
-			BooleanProperty back = CrossCollisionBlock.PROPERTY_BY_DIRECTION.get(side.getOpposite());
+			BooleanProperty back = PipeBlock.PROPERTY_BY_DIRECTION.get(side.getOpposite());
 			if (!neighbour.getValue(back) && canWrite(beside.getX(), beside.getZ())) {
 				level.setBlock(beside, neighbour.setValue(back, true), WRITE);
 			}

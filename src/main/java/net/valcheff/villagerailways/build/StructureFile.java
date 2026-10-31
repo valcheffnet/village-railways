@@ -11,13 +11,15 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.resources.Identifier;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 /**
  * A structure file of the mod, as a structure block saves it, read for placing block by block: the builder turns and
@@ -26,6 +28,7 @@ import net.minecraft.world.level.block.state.properties.Property;
  */
 final class StructureFile {
 	private static final Map<String, StructureFile> LOADED = new HashMap<>();
+	private static final Map<String, StructureTemplate> TEMPLATES = new HashMap<>();
 
 	final int sizeX;
 	final int sizeY;
@@ -68,48 +71,64 @@ final class StructureFile {
 		};
 	}
 
-	private static StructureFile read(String path) {
+	/**
+	 * The structure {@code village_railways:<path>} as the game places structures, read once. Read from the jar, not
+	 * through the game's structure manager, so the Paper plugin needs no data pack for it.
+	 */
+	static synchronized StructureTemplate template(String path) {
+		return TEMPLATES.computeIfAbsent(path, p -> {
+			StructureTemplate template = new StructureTemplate();
+			template.load(BuiltInRegistries.BLOCK.asLookup(), readTag(p));
+			return template;
+		});
+	}
+
+	private static CompoundTag readTag(String path) {
 		String resource = "/data/village_railways/structure/" + path + ".nbt";
 		try (InputStream in = StructureFile.class.getResourceAsStream(resource)) {
 			if (in == null) {
 				throw new IllegalStateException("Missing structure " + resource);
 			}
-			CompoundTag root = NbtIo.readCompressed(in, NbtAccounter.unlimitedHeap());
-			ListTag size = root.getListOrEmpty("size");
-			int sizeX = size.getIntOr(0, 0);
-			int sizeY = size.getIntOr(1, 0);
-			int sizeZ = size.getIntOr(2, 0);
-			ListTag paletteTag = root.getListOrEmpty("palette");
-			BlockState[] palette = new BlockState[paletteTag.size()];
-			for (int i = 0; i < palette.length; i++) {
-				palette[i] = state(paletteTag.getCompoundOrEmpty(i));
-			}
-			BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
-			ListTag blocks = root.getListOrEmpty("blocks");
-			for (int i = 0; i < blocks.size(); i++) {
-				CompoundTag block = blocks.getCompoundOrEmpty(i);
-				ListTag pos = block.getListOrEmpty("pos");
-				states[(pos.getIntOr(1, 0) * sizeZ + pos.getIntOr(2, 0)) * sizeX + pos.getIntOr(0, 0)] =
-						palette[block.getIntOr("state", 0)];
-			}
-			return new StructureFile(sizeX, sizeY, sizeZ, states);
+			return NbtIo.readCompressed(in, NbtAccounter.unlimitedHeap());
 		} catch (IOException e) {
 			throw new IllegalStateException("Could not read structure " + resource, e);
 		}
 	}
 
+	private static StructureFile read(String path) {
+		CompoundTag root = readTag(path);
+		ListTag size = root.getList("size", Tag.TAG_INT);
+		int sizeX = size.getInt(0);
+		int sizeY = size.getInt(1);
+		int sizeZ = size.getInt(2);
+		ListTag paletteTag = root.getList("palette", Tag.TAG_COMPOUND);
+		BlockState[] palette = new BlockState[paletteTag.size()];
+		for (int i = 0; i < palette.length; i++) {
+			palette[i] = state(paletteTag.getCompound(i));
+		}
+		BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
+		ListTag blocks = root.getList("blocks", Tag.TAG_COMPOUND);
+		for (int i = 0; i < blocks.size(); i++) {
+			CompoundTag block = blocks.getCompound(i);
+			ListTag pos = block.getList("pos", Tag.TAG_INT);
+			states[(pos.getInt(1) * sizeZ + pos.getInt(2)) * sizeX + pos.getInt(0)] =
+					palette[block.getInt("state")];
+		}
+		return new StructureFile(sizeX, sizeY, sizeZ, states);
+	}
+
 	private static BlockState state(CompoundTag tag) {
-		Identifier id = Identifier.parse(tag.getStringOr("id", tag.getStringOr("Name", "minecraft:air")));
-		Block block = BuiltInRegistries.BLOCK.getValue(id);
+		ResourceLocation id = ResourceLocation.parse(tag.getString("Name"));
+		Block block = BuiltInRegistries.BLOCK.get(id);
 		if (block == Blocks.AIR && !id.getPath().equals("air")) {
 			throw new IllegalStateException("Unknown block " + id + " in a structure");
 		}
 		BlockState state = block.defaultBlockState();
-		CompoundTag properties = tag.getCompound("properties").orElse(tag.getCompoundOrEmpty("Properties"));
-		for (String name : properties.keySet()) {
+		CompoundTag properties = tag.getCompound("Properties");
+		for (String name : properties.getAllKeys()) {
 			Property<?> property = block.getStateDefinition().getProperty(name);
 			if (property != null) {
-				state = with(state, property, properties.getStringOr(name, ""));
+				state = with(state, property, properties.getString(name));
 			}
 		}
 		return state;

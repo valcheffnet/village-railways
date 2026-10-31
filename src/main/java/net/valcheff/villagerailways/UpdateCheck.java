@@ -39,7 +39,7 @@ final class UpdateCheck {
 		newer = null;
 		supportMessage = config.supportMessage();
 		if (supportMessage) {
-			VillageRailways.LOGGER.info("Questions or bugs? Come to Discord: {}", DISCORD);
+			VillageRailways.LOGGER.info("For questions and bug reports come to Discord: {}", DISCORD);
 		}
 		if (!config.updateCheck()) {
 			return;
@@ -78,8 +78,8 @@ final class UpdateCheck {
 					.withStyle(ChatFormatting.GOLD));
 		}
 		if (supportMessage) {
-			player.sendSystemMessage(Component.literal("[Village Railways] Questions or bugs? Come to Discord: ")
-					.append(link("click here", DISCORD)).withStyle(ChatFormatting.GRAY));
+			player.sendSystemMessage(Component.literal("[Village Railways] For questions and bug reports come to ")
+					.append(link("Discord", DISCORD)).append(" (Click to Join)").withStyle(ChatFormatting.GRAY));
 		}
 	}
 
@@ -90,8 +90,8 @@ final class UpdateCheck {
 
 	private static Component link(String text, String url) {
 		return Component.literal(text).withStyle(s -> s.withColor(ChatFormatting.AQUA).withUnderlined(true)
-				.withClickEvent(new ClickEvent.OpenUrl(URI.create(url)))
-				.withHoverEvent(new HoverEvent.ShowText(Component.literal(url))));
+				.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
+				.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(url))));
 	}
 
 	/** The release a jar's version belongs to: 1.0.0 for 1.0.0+26.3, as the GitHub release is the same for all. */

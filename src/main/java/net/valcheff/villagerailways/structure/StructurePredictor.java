@@ -55,7 +55,7 @@ public class StructurePredictor {
 		this.generator = level.getChunkSource().getGenerator();
 		this.structureState = level.getChunkSource().getGeneratorState();
 		this.randomState = level.getChunkSource().randomState();
-		this.structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+		this.structures = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
 		this.wanted = wanted;
 		this.sets = structureState.possibleStructureSets().stream()
 				.filter(set -> set.value().placement() instanceof RandomSpreadStructurePlacement)
@@ -169,7 +169,7 @@ public class StructurePredictor {
 
 	private StructureStart tryGenerate(StructureSet.StructureSelectionEntry entry, ChunkPos chunk) {
 		Structure structure = entry.structure().value();
-		StructureStart start = structure.generate(entry.structure(), level.dimension(), level.registryAccess(), generator,
+		StructureStart start = structure.generate(level.registryAccess(), generator,
 				generator.getBiomeSource(), randomState, level.getServer().getStructureManager(),
 				structureState.getLevelSeed(), chunk, 0, level, structure.biomes()::contains);
 		return start.isValid() ? start : null;

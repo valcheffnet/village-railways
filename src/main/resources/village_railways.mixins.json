@@ -5,6 +5,7 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"ChunkGeneratorMixin",
+		"LevelChunkMixin",
 		"MapItemSavedDataMixin"
 	],
 	"injectors": {

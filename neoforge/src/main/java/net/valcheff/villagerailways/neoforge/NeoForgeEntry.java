@@ -1,6 +1,7 @@
 package net.valcheff.villagerailways.neoforge;
 
 import java.nio.file.Path;
+import java.util.function.Consumer;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -26,6 +27,17 @@ import net.valcheff.villagerailways.VillageRailways;
 /** NeoForge entry point: wires NeoForge's events and networking to the shared code. */
 @Mod(VillageRailways.MOD_ID)
 public final class NeoForgeEntry {
+	/**
+	 * What a client does with the server's settings. NeoForge 21.1 takes a channel's handler where the channel is
+	 * registered, here on both sides, so the client entry point sets it to keep client classes out of a server.
+	 */
+	private static volatile Consumer<ConfigSync.State> clientState = state -> {
+	};
+
+	public static void onClientState(Consumer<ConfigSync.State> handler) {
+		clientState = handler;
+	}
+
 	public NeoForgeEntry(IEventBus modBus, ModContainer container) {
 		Platform.set(new Platform.Services() {
 			@Override
@@ -62,7 +74,8 @@ public final class NeoForgeEntry {
 					context.reply(ConfigSync.answerOpenLand(player.level().getServer(), player, payload));
 				}
 			});
-			registrar.playToClient(ConfigSync.State.TYPE, ConfigSync.State.CODEC);
+			registrar.playToClient(ConfigSync.State.TYPE, ConfigSync.State.CODEC,
+					(state, context) -> clientState.accept(state));
 		});
 
 		IEventBus bus = NeoForge.EVENT_BUS;

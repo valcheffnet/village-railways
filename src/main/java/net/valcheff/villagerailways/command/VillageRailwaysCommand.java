@@ -89,7 +89,7 @@ public final class VillageRailwaysCommand {
 
 	public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
 		dispatcher.register(literal("villagerailways")
-				.requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+				.requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
 				.then(literal("openland")
 						.executes(context -> openLand(context, true))
 						.then(literal("cancel")

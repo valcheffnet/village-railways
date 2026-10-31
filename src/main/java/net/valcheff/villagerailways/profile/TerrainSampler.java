@@ -36,10 +36,10 @@ public class TerrainSampler {
 		NoiseColumn column = generator.getBaseColumn(x, z, level, randomState);
 		// As Heightmap.Types.OCEAN_FLOOR_WG and WORLD_SURFACE_WG: the first free y over the top block that blocks
 		// motion, and over the top block that is not air, or the bottom of the world.
-		int ground = level.getMinY();
-		int surface = level.getMinY();
+		int ground = level.getMinBuildHeight();
+		int surface = level.getMinBuildHeight();
 		boolean surfaceFound = false;
-		for (int y = level.getMaxY(); y >= level.getMinY(); y--) {
+		for (int y = level.getMaxBuildHeight() - 1; y >= level.getMinBuildHeight(); y--) {
 			BlockState state = column.getBlock(y);
 			if (!surfaceFound && !state.isAir()) {
 				surface = y + 1;
