@@ -4,9 +4,8 @@ plugins {
 }
 
 // The Paper build shares the mod's code with the Fabric build in the parent folder: everything under src/main except
-// the Fabric entry point and the mixins, plus the Paper plugin here. The mod's data folder goes into the jar twice: as
-// it is, for the templates read from the jar, and as a data pack that the plugin registers at bootstrap, for the
-// structures the game loads. Run it from this folder.
+// the Fabric entry point and the mixins, plus the Paper plugin here. The structures are read from the jar. Run it from
+// this folder.
 def root = file('..')
 def rootProps = new Properties()
 file('../gradle.properties').withInputStream { rootProps.load(it) }
@@ -46,12 +45,6 @@ processResources {
 	inputs.property 'version', version
 	filesMatching('paper-plugin.yml') {
 		expand version: version
-	}
-	into('datapack') {
-		from 'src/main/datapack'
-		from("${root}/src/main/resources") {
-			include 'data/**'
-		}
 	}
 }
 
