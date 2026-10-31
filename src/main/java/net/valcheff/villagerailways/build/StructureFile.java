@@ -11,6 +11,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -18,6 +19,7 @@ import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 /**
  * A structure file of the mod, as a structure block saves it, read for placing block by block: the builder turns and
@@ -26,6 +28,7 @@ import net.minecraft.world.level.block.state.properties.Property;
  */
 final class StructureFile {
 	private static final Map<String, StructureFile> LOADED = new HashMap<>();
+	private static final Map<String, StructureTemplate> TEMPLATES = new HashMap<>();
 
 	final int sizeX;
 	final int sizeY;
@@ -68,34 +71,66 @@ final class StructureFile {
 		};
 	}
 
-	private static StructureFile read(String path) {
+	/**
+	 * The structure {@code village_railways:<path>} as the game places structures, read once. Read from the jar, not
+	 * through the game's structure manager: the files are saved by Minecraft 26.3, which names the palette keys
+	 * {@code id} and {@code properties}, and the game here reads only {@code Name} and {@code Properties}, so its own
+	 * loader would place air.
+	 */
+	static synchronized StructureTemplate template(String path) {
+		return TEMPLATES.computeIfAbsent(path, p -> {
+			CompoundTag root = readTag(p);
+			for (Tag entry : root.getListOrEmpty("palette")) {
+				if (entry instanceof CompoundTag state) {
+					rename(state, "id", "Name");
+					rename(state, "properties", "Properties");
+				}
+			}
+			StructureTemplate template = new StructureTemplate();
+			template.load(BuiltInRegistries.BLOCK, root);
+			return template;
+		});
+	}
+
+	private static void rename(CompoundTag tag, String from, String to) {
+		Tag value = tag.remove(from);
+		if (value != null) {
+			tag.put(to, value);
+		}
+	}
+
+	private static CompoundTag readTag(String path) {
 		String resource = "/data/village_railways/structure/" + path + ".nbt";
 		try (InputStream in = StructureFile.class.getResourceAsStream(resource)) {
 			if (in == null) {
 				throw new IllegalStateException("Missing structure " + resource);
 			}
-			CompoundTag root = NbtIo.readCompressed(in, NbtAccounter.unlimitedHeap());
-			ListTag size = root.getListOrEmpty("size");
-			int sizeX = size.getIntOr(0, 0);
-			int sizeY = size.getIntOr(1, 0);
-			int sizeZ = size.getIntOr(2, 0);
-			ListTag paletteTag = root.getListOrEmpty("palette");
-			BlockState[] palette = new BlockState[paletteTag.size()];
-			for (int i = 0; i < palette.length; i++) {
-				palette[i] = state(paletteTag.getCompoundOrEmpty(i));
-			}
-			BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
-			ListTag blocks = root.getListOrEmpty("blocks");
-			for (int i = 0; i < blocks.size(); i++) {
-				CompoundTag block = blocks.getCompoundOrEmpty(i);
-				ListTag pos = block.getListOrEmpty("pos");
-				states[(pos.getIntOr(1, 0) * sizeZ + pos.getIntOr(2, 0)) * sizeX + pos.getIntOr(0, 0)] =
-						palette[block.getIntOr("state", 0)];
-			}
-			return new StructureFile(sizeX, sizeY, sizeZ, states);
+			return NbtIo.readCompressed(in, NbtAccounter.unlimitedHeap());
 		} catch (IOException e) {
 			throw new IllegalStateException("Could not read structure " + resource, e);
 		}
+	}
+
+	private static StructureFile read(String path) {
+		CompoundTag root = readTag(path);
+		ListTag size = root.getListOrEmpty("size");
+		int sizeX = size.getIntOr(0, 0);
+		int sizeY = size.getIntOr(1, 0);
+		int sizeZ = size.getIntOr(2, 0);
+		ListTag paletteTag = root.getListOrEmpty("palette");
+		BlockState[] palette = new BlockState[paletteTag.size()];
+		for (int i = 0; i < palette.length; i++) {
+			palette[i] = state(paletteTag.getCompoundOrEmpty(i));
+		}
+		BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
+		ListTag blocks = root.getListOrEmpty("blocks");
+		for (int i = 0; i < blocks.size(); i++) {
+			CompoundTag block = blocks.getCompoundOrEmpty(i);
+			ListTag pos = block.getListOrEmpty("pos");
+			states[(pos.getIntOr(1, 0) * sizeZ + pos.getIntOr(2, 0)) * sizeX + pos.getIntOr(0, 0)] =
+					palette[block.getIntOr("state", 0)];
+		}
+		return new StructureFile(sizeX, sizeY, sizeZ, states);
 	}
 
 	private static BlockState state(CompoundTag tag) {

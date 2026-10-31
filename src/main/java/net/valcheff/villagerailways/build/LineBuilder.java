@@ -12,7 +12,6 @@ import java.util.function.IntPredicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.ChunkPos;
@@ -162,7 +161,7 @@ public final class LineBuilder {
 	 * track at z {@value #WESTERN_TRACK_Z} and its second track two blocks lower, the rails one block up, the middle of
 	 * the station at x {@value #WESTERN_MIDDLE_X}, the house towards larger z.
 	 */
-	private static final Identifier WESTERN_STATION = Identifier.fromNamespaceAndPath("village_railways", "western_station");
+	private static final String WESTERN_STATION = "western_station";
 	private static final int WESTERN_MIDDLE_X = 18;
 	private static final int WESTERN_TRACK_Z = 4;
 	private static final int WESTERN_RAIL_Y = 1;
@@ -609,7 +608,7 @@ public final class LineBuilder {
 			int minZ = chunk.getMinBlockZ() - 16;
 			int maxZ = chunk.getMaxBlockZ() + 16;
 			BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos();
-			StructureFile western = StructureFile.load(WESTERN_STATION.getPath());
+			StructureFile western = StructureFile.load(WESTERN_STATION);
 			for (TrackPlan line : plans) {
 				if (line.western()) {
 					int middle = line.length() / 2;
@@ -1512,10 +1511,7 @@ public final class LineBuilder {
 	 * own rails are left out; the station lays its rails, with their powered rails, itself.
 	 */
 	private void placeWesternHouse() {
-		StructureTemplate house = level.getLevel().getStructureManager().get(WESTERN_STATION).orElse(null);
-		if (house == null) {
-			return;
-		}
+		StructureTemplate house = StructureFile.template(WESTERN_STATION);
 		int middle = plan.length() / 2;
 		Direction out = plan.direction(middle, middle + 1).getCounterClockWise();
 		StructurePlaceSettings settings = westernSettings(out)
