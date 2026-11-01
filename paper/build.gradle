@@ -17,7 +17,7 @@ base {
 	archivesName = 'village-railways-paper'
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 sourceSets.main {
 	java {
@@ -41,6 +41,17 @@ dependencies {
 	paperweight.paperDevBundle(project.paper_dev_bundle)
 }
 
+// The plugin compiles for Java 17, but paperweight's own tools need 21.
+paperweight.javaLauncher = javaToolchains.launcherFor {
+	languageVersion = JavaLanguageVersion.of(21)
+}
+
+// Paper 1.20.1 runs on Spigot's names, so the jar is mapped back to them.
+paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.Companion.REOBF_PRODUCTION
+tasks.named('assemble') {
+	dependsOn 'reobfJar'
+}
+
 processResources {
 	inputs.property 'version', version
 	filesMatching('paper-plugin.yml') {
@@ -50,5 +61,5 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
-	options.release = 21
+	options.release = 17
 }

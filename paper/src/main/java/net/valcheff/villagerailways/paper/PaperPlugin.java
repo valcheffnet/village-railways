@@ -7,22 +7,15 @@ import java.nio.file.Path;
 import java.util.Random;
 
 import com.destroystokyo.paper.event.server.ServerTickEndEvent;
-import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.tree.CommandNode;
-import com.mojang.brigadier.tree.LiteralCommandNode;
-import io.papermc.paper.command.brigadier.Commands;
-import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
-import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.WorldGenLevel;
 import net.valcheff.villagerailways.Platform;
 import net.valcheff.villagerailways.VillageRailways;
-import org.bukkit.craftbukkit.CraftWorld;
-import org.bukkit.craftbukkit.entity.CraftPlayer;
-import org.bukkit.craftbukkit.generator.CraftLimitedRegion;
+import org.bukkit.craftbukkit.v1_20_R1.CraftWorld;
+import org.bukkit.craftbukkit.v1_20_R1.entity.CraftPlayer;
+import org.bukkit.craftbukkit.v1_20_R1.generator.CraftLimitedRegion;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -67,27 +60,12 @@ public final class PaperPlugin extends JavaPlugin implements Listener {
 			public boolean paper() {
 				return true;
 			}
-
-			@Override
-			public void quietly(WorldGenLevel level, Runnable build) {
-				if (!(level instanceof ServerLevel server)) {
-					build.run();
-					return;
-				}
-				// Paper's own switch, meant for undoing a cancelled placement: a removed block does not react, and
-				// its block entity just goes.
-				boolean outer = server.isBlockPlaceCancelled;
-				server.isBlockPlaceCancelled = true;
-				try {
-					build.run();
-				} finally {
-					server.isBlockPlaceCancelled = outer;
-				}
-			}
 		});
 		VillageRailways.serverStarting(MinecraftServer.getServer());
 		getServer().getPluginManager().registerEvents(this, this);
-		getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> registerCommands(event.registrar()));
+		// Into the game's own command tree: Paper 1.20.1 has no command registrar of its own yet, and it takes the
+		// game's commands over when it sets up its own after the worlds load.
+		VillageRailways.registerCommands(MinecraftServer.getServer().getCommands().getDispatcher());
 		VillageRailways.LOGGER.info("Village Railways loaded");
 	}
 
@@ -131,20 +109,5 @@ public final class PaperPlugin extends JavaPlugin implements Listener {
 	@EventHandler
 	public void onTickEnd(ServerTickEndEvent event) {
 		VillageRailways.serverTick(MinecraftServer.getServer());
-	}
-
-	/**
-	 * The commands are built on vanilla's command source, which is what Paper's command source is underneath, so the
-	 * same tree is handed to Paper's registrar.
-	 */
-	@SuppressWarnings({"unchecked", "rawtypes"})
-	private static void registerCommands(Commands registrar) {
-		CommandDispatcher<CommandSourceStack> built = new CommandDispatcher<>();
-		VillageRailways.registerCommands(built);
-		for (CommandNode<CommandSourceStack> node : built.getRoot().getChildren()) {
-			if (node instanceof LiteralCommandNode<CommandSourceStack> literal) {
-				registrar.register((LiteralCommandNode) literal, "Village Railways");
-			}
-		}
 	}
 }

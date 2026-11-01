@@ -4,12 +4,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-import io.netty.buffer.ByteBuf;
 import net.minecraft.commands.Commands;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,21 +19,31 @@ import net.valcheff.villagerailways.profile.TrackSettings;
  * as the file does, from the next start. Players without the mod never see any of this.
  */
 public final class ConfigSync {
-	private static final StreamCodec<ByteBuf, List<Integer>> INTS = ByteBufCodecs.VAR_INT
-			.apply(ByteBufCodecs.list());
-
 	private ConfigSync() {
 	}
 
+	/** A message between the config screen and the server: the channel it goes on and how it is written. */
+	public interface Message {
+		ResourceLocation id();
+
+		void write(FriendlyByteBuf buf);
+	}
+
 	/** The config screen asks for the server's settings. */
-	public record Request() implements CustomPacketPayload {
-		public static final Type<Request> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
-				"config_request"));
-		public static final StreamCodec<RegistryFriendlyByteBuf, Request> CODEC = StreamCodec.unit(new Request());
+	public record Request() implements Message {
+		public static final ResourceLocation ID = new ResourceLocation(VillageRailways.MOD_ID, "config_request");
+
+		public static Request read(FriendlyByteBuf buf) {
+			return new Request();
+		}
 
 		@Override
-		public Type<Request> type() {
-			return TYPE;
+		public ResourceLocation id() {
+			return ID;
+		}
+
+		@Override
+		public void write(FriendlyByteBuf buf) {
 		}
 	}
 
@@ -46,43 +52,63 @@ public final class ConfigSync {
 	 * 0) its world keeps, whether its existing land opens to lines at the next start, and whether the player may
 	 * change the settings.
 	 */
-	public record State(List<Integer> values, List<Integer> world, boolean openLand, boolean canEdit)
-			implements CustomPacketPayload {
-		public static final Type<State> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
-				"config_state"));
-		public static final StreamCodec<RegistryFriendlyByteBuf, State> CODEC = StreamCodec.composite(INTS,
-				State::values, INTS, State::world, ByteBufCodecs.BOOL, State::openLand, ByteBufCodecs.BOOL,
-				State::canEdit, State::new);
+	public record State(List<Integer> values, List<Integer> world, boolean openLand, boolean canEdit) implements Message {
+		public static final ResourceLocation ID = new ResourceLocation(VillageRailways.MOD_ID, "config_state");
+
+		public static State read(FriendlyByteBuf buf) {
+			return new State(buf.readList(FriendlyByteBuf::readVarInt), buf.readList(FriendlyByteBuf::readVarInt),
+					buf.readBoolean(), buf.readBoolean());
+		}
 
 		@Override
-		public Type<State> type() {
-			return TYPE;
+		public ResourceLocation id() {
+			return ID;
+		}
+
+		@Override
+		public void write(FriendlyByteBuf buf) {
+			buf.writeCollection(values, FriendlyByteBuf::writeVarInt);
+			buf.writeCollection(world, FriendlyByteBuf::writeVarInt);
+			buf.writeBoolean(openLand);
+			buf.writeBoolean(canEdit);
 		}
 	}
 
 	/** New settings from the config screen, in {@link RailwayConfig.Setting} order. */
-	public record Save(List<Integer> values) implements CustomPacketPayload {
-		public static final Type<Save> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
-				"config_save"));
-		public static final StreamCodec<RegistryFriendlyByteBuf, Save> CODEC = StreamCodec.composite(INTS,
-				Save::values, Save::new);
+	public record Save(List<Integer> values) implements Message {
+		public static final ResourceLocation ID = new ResourceLocation(VillageRailways.MOD_ID, "config_save");
+
+		public static Save read(FriendlyByteBuf buf) {
+			return new Save(buf.readList(FriendlyByteBuf::readVarInt));
+		}
 
 		@Override
-		public Type<Save> type() {
-			return TYPE;
+		public ResourceLocation id() {
+			return ID;
+		}
+
+		@Override
+		public void write(FriendlyByteBuf buf) {
+			buf.writeCollection(values, FriendlyByteBuf::writeVarInt);
 		}
 	}
 
 	/** The config screen asks for the world's existing land to open to lines at the next start, or takes that back. */
-	public record OpenLand(boolean open) implements CustomPacketPayload {
-		public static final Type<OpenLand> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(VillageRailways.MOD_ID,
-				"open_land"));
-		public static final StreamCodec<RegistryFriendlyByteBuf, OpenLand> CODEC = StreamCodec.composite(
-				ByteBufCodecs.BOOL, OpenLand::open, OpenLand::new);
+	public record OpenLand(boolean open) implements Message {
+		public static final ResourceLocation ID = new ResourceLocation(VillageRailways.MOD_ID, "open_land");
+
+		public static OpenLand read(FriendlyByteBuf buf) {
+			return new OpenLand(buf.readBoolean());
+		}
 
 		@Override
-		public Type<OpenLand> type() {
-			return TYPE;
+		public ResourceLocation id() {
+			return ID;
+		}
+
+		@Override
+		public void write(FriendlyByteBuf buf) {
+			buf.writeBoolean(open);
 		}
 	}
 

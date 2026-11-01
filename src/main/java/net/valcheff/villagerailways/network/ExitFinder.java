@@ -3,6 +3,7 @@ package net.valcheff.villagerailways.network;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import com.google.common.collect.Lists;
 
 /**
  * Finds the way a line leaves its village's station for open land, round the village when the line's other village
@@ -184,7 +185,7 @@ final class ExitFinder {
 			cell = table.begun[state];
 			previous = table.previous[state];
 		}
-		return corners.reversed();
+		return Lists.reverse(corners);
 	}
 
 	/** The straights of a round, shortest way first, so where two reach a block with as many turns the shorter wins. */
@@ -216,7 +217,7 @@ final class ExitFinder {
 		// A way that turns at its start begins its first two straights on the same block.
 		List<Point> points = new ArrayList<>();
 		for (Point point : blocks) {
-			if (points.isEmpty() || !points.getLast().equals(point)) {
+			if (points.isEmpty() || !points.get(points.size() - 1).equals(point)) {
 				points.add(point);
 			}
 		}

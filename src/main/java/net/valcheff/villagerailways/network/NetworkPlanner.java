@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.LongConsumer;
+import com.google.common.collect.Lists;
+import net.minecraft.util.Mth;
 
 /**
  * Decides which villages get a railway line between them.
@@ -156,8 +158,8 @@ public class NetworkPlanner {
 	 * chunks lying fully inside the area count.
 	 */
 	public synchronized void markExplored(int minX, int minZ, int maxX, int maxZ) {
-		int minChunkX = Math.ceilDiv(minX, 16);
-		int minChunkZ = Math.ceilDiv(minZ, 16);
+		int minChunkX = Mth.positiveCeilDiv(minX, 16);
+		int minChunkZ = Mth.positiveCeilDiv(minZ, 16);
 		int maxChunkX = Math.floorDiv(maxX + 1, 16) - 1;
 		int maxChunkZ = Math.floorDiv(maxZ + 1, 16) - 1;
 		for (int cx = Math.floorDiv(minChunkX, CHUNKS_PER_CELL); cx <= Math.floorDiv(maxChunkX, CHUNKS_PER_CELL); cx++) {
@@ -351,7 +353,7 @@ public class NetworkPlanner {
 				.thenComparingLong(VillagePair::second);
 		candidates.values().forEach(list -> list.sort(byScore));
 		List<GroupPair> groupPairs = new ArrayList<>(candidates.keySet());
-		groupPairs.sort(Comparator.comparing((GroupPair groups) -> candidates.get(groups).getFirst(), byScore));
+		groupPairs.sort(Comparator.comparing((GroupPair groups) -> candidates.get(groups).get(0), byScore));
 
 		for (GroupPair groups : groupPairs) {
 			int tries = 0;
@@ -503,7 +505,7 @@ public class NetworkPlanner {
 		List<Point> track = station.track();
 		// Going from the first end to the second, the right is the way along turned clockwise.
 		boolean villageOnRight = (station.along() + 1) % 4 == (station.out() + 2) % 4;
-		return villageOnRight ? track : track.reversed();
+		return villageOnRight ? track : Lists.reverse(track);
 	}
 
 	/**
@@ -529,12 +531,12 @@ public class NetworkPlanner {
 
 	private boolean isTrunkEnd(Village village, Point slot) {
 		return linksOf(village.id()).stream().anyMatch(link -> link.trunk()
-				&& (link.path().getFirst().equals(slot) || link.path().getLast().equals(slot)));
+				&& (link.path().get(0).equals(slot) || link.path().get(link.path().size() - 1).equals(slot)));
 	}
 
 	private boolean isUsed(Village village, Point slot) {
 		return linksOf(village.id()).stream()
-				.anyMatch(link -> link.path().getFirst().equals(slot) || link.path().getLast().equals(slot));
+				.anyMatch(link -> link.path().get(0).equals(slot) || link.path().get(link.path().size() - 1).equals(slot));
 	}
 
 	/**
@@ -735,7 +737,7 @@ public class NetworkPlanner {
 			exits.keySet().removeIf(key -> key.village() == a.id() || key.village() == b.id());
 		}
 		if (choice == null || choice.path() == null) {
-			for (Link[] move : moves.reversed()) {
+			for (Link[] move : Lists.reverse(moves)) {
 				replaceLink(move[1], move[0], added);
 			}
 			return null;
@@ -773,7 +775,7 @@ public class NetworkPlanner {
 				: StationLayout.Slot.OUTER_SECOND;
 		List<Point> taken = List.of(layout.end(trunkEnd), layout.end(trunkOuter), layout.end(StationLayout.Slot.MIDDLE));
 		for (Link line : linksOf(village.id())) {
-			Point here = line.from() == village.id() ? line.path().getFirst() : line.path().getLast();
+			Point here = line.from() == village.id() ? line.path().get(0) : line.path().get(line.path().size() - 1);
 			if (!taken.contains(here)) {
 				continue;
 			}
@@ -792,7 +794,7 @@ public class NetworkPlanner {
 			}
 			Village other = villages.get(line.other(village.id()));
 			StationLayout.Station otherLayout = StationLayout.of(stationOf(other.id()).path(), other);
-			Point otherEnd = line.from() == village.id() ? line.path().getLast() : line.path().getFirst();
+			Point otherEnd = line.from() == village.id() ? line.path().get(line.path().size() - 1) : line.path().get(0);
 			StationLayout.Slot otherSlot = Arrays.stream(StationLayout.Slot.values())
 					.filter(slot -> otherLayout.end(slot).equals(otherEnd)).findFirst().orElseThrow();
 			int index = links.indexOf(line);
@@ -890,11 +892,11 @@ public class NetworkPlanner {
 				if (outA == null || outB == null) {
 					continue;
 				}
-				Point fromA = outA.getLast();
-				Point fromB = outB.getLast();
+				Point fromA = outA.get(outA.size() - 1);
+				Point fromB = outB.get(outB.size() - 1);
 				boolean mainIsX = Math.abs(fromB.x() - fromA.x()) >= Math.abs(fromB.z() - fromA.z());
 				for (List<Point> open : RouteStepper.candidates(fromA, fromB, mainIsX, settings)) {
-					List<Point> route = joined(outA, open, outB.reversed());
+					List<Point> route = joined(outA, open, Lists.reverse(outB));
 					if (route != null && hasApproaches(route)) {
 						routes.add(route);
 					}
@@ -932,7 +934,7 @@ public class NetworkPlanner {
 	private static boolean hasApproaches(List<Point> route) {
 		Point first = route.get(0);
 		Point second = route.get(1);
-		Point last = route.getLast();
+		Point last = route.get(route.size() - 1);
 		Point beforeLast = route.get(route.size() - 2);
 		return Math.abs(second.x() - first.x()) + Math.abs(second.z() - first.z()) >= ExitFinder.APPROACH
 				&& Math.abs(last.x() - beforeLast.x()) + Math.abs(last.z() - beforeLast.z()) >= ExitFinder.APPROACH;
@@ -947,7 +949,7 @@ public class NetworkPlanner {
 		List<Point> points = new ArrayList<>();
 		for (List<Point> part : parts) {
 			for (Point point : part) {
-				if (points.isEmpty() || !points.getLast().equals(point)) {
+				if (points.isEmpty() || !points.get(points.size() - 1).equals(point)) {
 					points.add(point);
 				}
 			}
@@ -955,13 +957,13 @@ public class NetworkPlanner {
 		List<Point> corners = new ArrayList<>();
 		for (Point point : points) {
 			if (corners.size() >= 2) {
-				int before = ExitFinder.direction(corners.get(corners.size() - 2), corners.getLast());
-				int after = ExitFinder.direction(corners.getLast(), point);
+				int before = ExitFinder.direction(corners.get(corners.size() - 2), corners.get(corners.size() - 1));
+				int after = ExitFinder.direction(corners.get(corners.size() - 1), point);
 				if (before == (after + 2) % 4) {
 					return null;
 				}
 				if (before == after) {
-					corners.removeLast();
+					corners.remove(corners.size() - 1);
 				}
 			}
 			corners.add(point);

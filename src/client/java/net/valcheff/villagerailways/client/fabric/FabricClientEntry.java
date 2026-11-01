@@ -2,7 +2,9 @@ package net.valcheff.villagerailways.client.fabric;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.valcheff.villagerailways.ConfigSync;
 import net.valcheff.villagerailways.client.ClientPlatform;
 import net.valcheff.villagerailways.client.RailwayConfigScreen;
@@ -13,19 +15,24 @@ public class FabricClientEntry implements ClientModInitializer {
 	public void onInitializeClient() {
 		ClientPlatform.set(new ClientPlatform.Services() {
 			@Override
-			public boolean canSend(CustomPacketPayload.Type<?> type) {
-				return ClientPlayNetworking.canSend(type);
+			public boolean canSend(ResourceLocation channel) {
+				return ClientPlayNetworking.canSend(channel);
 			}
 
 			@Override
-			public void send(CustomPacketPayload payload) {
-				ClientPlayNetworking.send(payload);
+			public void send(ConfigSync.Message message) {
+				FriendlyByteBuf buf = PacketByteBufs.create();
+				message.write(buf);
+				ClientPlayNetworking.send(message.id(), buf);
 			}
 		});
-		ClientPlayNetworking.registerGlobalReceiver(ConfigSync.State.TYPE, (state, context) -> {
-			if (context.client().screen instanceof RailwayConfigScreen screen) {
-				screen.show(state);
-			}
+		ClientPlayNetworking.registerGlobalReceiver(ConfigSync.State.ID, (client, handler, buf, sender) -> {
+			ConfigSync.State state = ConfigSync.State.read(buf);
+			client.execute(() -> {
+				if (client.screen instanceof RailwayConfigScreen screen) {
+					screen.show(state);
+				}
+			});
 		});
 	}
 }

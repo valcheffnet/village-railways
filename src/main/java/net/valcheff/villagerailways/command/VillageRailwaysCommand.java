@@ -37,7 +37,7 @@ import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.ChunkStatus;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.valcheff.villagerailways.VillageRailways;
@@ -287,7 +287,7 @@ public final class VillageRailwaysCommand {
 		}
 		String summary = counts.entrySet().stream().filter(entry -> entry.getValue() > 0)
 				.map(entry -> entry.getValue() + " " + entry.getKey()).collect(Collectors.joining(", "));
-		report.addFirst(near.size() + " lines within " + radius + " blocks" + (summary.isEmpty() ? "" : ": " + summary));
+		report.add(0, near.size() + " lines within " + radius + " blocks" + (summary.isEmpty() ? "" : ": " + summary));
 		report.forEach(line -> source.sendSuccess(() -> Component.literal(line), false));
 		return near.size();
 	}
@@ -305,7 +305,7 @@ public final class VillageRailwaysCommand {
 			source.sendFailure(Component.literal("Only " + nearest.size() + " lines planned; run /villagerailways network first"));
 			return 0;
 		}
-		Link link = nearest.getLast();
+		Link link = nearest.get(nearest.size() - 1);
 		long started = System.nanoTime();
 		TrackPlan plan = VillageRailways.service().planOf(link).orElse(null);
 		long millis = (System.nanoTime() - started) / 1_000_000;
@@ -512,12 +512,12 @@ public final class VillageRailwaysCommand {
 				.sorted(Comparator.comparingLong(link -> distanceSq(link, origin)))
 				.limit(n)
 				.toList();
-		return nearest.size() < n ? null : nearest.getLast();
+		return nearest.size() < n ? null : nearest.get(nearest.size() - 1);
 	}
 
 	private static String describe(Link link) {
-		Point from = link.path().getFirst();
-		Point to = link.path().getLast();
+		Point from = link.path().get(0);
+		Point to = link.path().get(link.path().size() - 1);
 		return "line " + from.x() + ", " + from.z() + " to " + to.x() + ", " + to.z();
 	}
 

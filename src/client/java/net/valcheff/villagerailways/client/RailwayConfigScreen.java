@@ -7,18 +7,24 @@ import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.ContainerObjectSelectionList;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.MultiLineTextWidget;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.layouts.GridLayout;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
-import net.minecraft.client.gui.layouts.LinearLayout;
+import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.util.Mth;
 import net.valcheff.villagerailways.ConfigSync;
 import net.valcheff.villagerailways.Platform;
 import net.valcheff.villagerailways.RailwayConfig;
@@ -35,6 +41,7 @@ public class RailwayConfigScreen extends Screen {
 	private final Screen parent;
 	private final boolean onServer;
 	private HeaderAndFooterLayout layout;
+	private SettingsList list;
 	/** The settings in {@link Setting} order, null until the server answers. */
 	private List<Integer> values;
 	/** The settings as saved, to tell whether Done has changes to save. */
@@ -51,7 +58,7 @@ public class RailwayConfigScreen extends Screen {
 		super(Component.literal("Village Railways"));
 		this.parent = parent;
 		boolean connected = Minecraft.getInstance().getConnection() != null;
-		onServer = connected && ClientPlatform.get().canSend(ConfigSync.Request.TYPE);
+		onServer = connected && ClientPlatform.get().canSend(ConfigSync.Request.ID);
 		if (onServer) {
 			status = Component.literal("Asking the server for its settings...");
 			ClientPlatform.get().send(new ConfigSync.Request());
@@ -82,44 +89,46 @@ public class RailwayConfigScreen extends Screen {
 	@Override
 	protected void init() {
 		layout = new HeaderAndFooterLayout(this);
-		layout.addTitleHeader(title, font);
-		LinearLayout contents = layout.addToContents(LinearLayout.vertical().spacing(6));
-		contents.defaultCellSetting().alignHorizontallyCenter();
+		layout.addToHeader(new StringWidget(title, font));
+		list = new SettingsList();
 		if (values != null) {
 			for (Setting setting : Setting.values()) {
 				if (setting == Setting.CUT_DEPTH) {
-					contents.addChild(text(world == null ? "For new worlds:"
+					list.addText(world == null ? "For new worlds:"
 							: "For new worlds. This one keeps a cut depth of " + world.get(0) + ", pillars every "
 									+ world.get(1) + " blocks and sea tubes " + (world.get(2) == 1 ? "on" : "off")
-									+ ":"));
+									+ ":");
 				}
 				int index = setting.ordinal();
 				Tooltip tooltip = Tooltip.create(Component.literal(explanation(setting)));
 				AbstractWidget widget;
 				if (setting.isSwitch()) {
 					// A cycle button sets its tooltip again on every click, from the one given to its builder.
-					widget = contents.addChild(CycleButton.onOffBuilder(values.get(index) == 1).withTooltip(on -> tooltip)
-							.create(0, 0, WIDTH, 20, label(setting, 1), (button, on) -> values.set(index, on ? 1 : 0)));
+					widget = CycleButton.onOffBuilder(values.get(index) == 1).withTooltip(on -> tooltip)
+							.create(0, 0, WIDTH, 20, label(setting, 1), (button, on) -> values.set(index, on ? 1 : 0));
 				} else {
-					widget = contents.addChild(new IntSlider(setting.min, setting.max, step(setting), values.get(index),
-							value -> label(setting, value), value -> values.set(index, value)));
+					widget = new IntSlider(setting.min, setting.max, step(setting), values.get(index),
+							value -> label(setting, value), value -> values.set(index, value));
 					widget.setTooltip(tooltip);
 				}
 				widget.active = canEdit;
+				list.addWidget(widget);
 			}
 		}
 		if (onServer && values != null) {
-			Button land = contents.addChild(Button.builder(Component.literal(openLand
+			Button land = Button.builder(Component.literal(openLand
 					? "Existing land opens at the next start: call off" : "Open the existing land to lines..."),
-					button -> openLand()).width(WIDTH).build());
+					button -> openLand()).width(WIDTH).build();
 			land.setTooltip(Tooltip.create(Component.literal("At the next start of the server, lines are planned "
 					+ "through the land that exists now as well, which they keep out of otherwise, and built there as "
 					+ "it loads.")));
 			land.active = canEdit;
+			list.addWidget(land);
 		}
-		contents.addChild(text(status.getString()));
+		list.addText(status.getString());
+		addRenderableWidget(list);
 
-		LinearLayout footer = layout.addToFooter(LinearLayout.horizontal().spacing(8));
+		GridLayout.RowHelper footer = layout.addToFooter(new GridLayout().columnSpacing(8)).createRowHelper(2);
 		Button apply = footer.addChild(Button.builder(Component.literal("Apply"), button -> save()).width(150)
 				.build());
 		apply.active = canEdit && values != null;
@@ -160,9 +169,17 @@ public class RailwayConfigScreen extends Screen {
 				Component.literal("Backup and Build"), CommonComponents.GUI_CANCEL));
 	}
 
+	/** The background first: on this version a screen draws it itself, or every frame stays under the next one. */
+	@Override
+	public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+		renderBackground(graphics);
+		super.render(graphics, mouseX, mouseY, partialTick);
+	}
+
 	@Override
 	protected void repositionElements() {
 		layout.arrangeElements();
+		list.updateSize(width, height, layout.getHeaderHeight(), height - layout.getFooterHeight());
 	}
 
 	/** Saves what was changed and not saved yet, then goes back. */
@@ -172,10 +189,6 @@ public class RailwayConfigScreen extends Screen {
 			save();
 		}
 		minecraft.setScreen(parent);
-	}
-
-	private MultiLineTextWidget text(String text) {
-		return new MultiLineTextWidget(Component.literal(text), font).setMaxWidth(WIDTH).setCentered(true);
 	}
 
 	private static Path configDir() {
@@ -224,6 +237,73 @@ public class RailwayConfigScreen extends Screen {
 		};
 	}
 
+	/** The settings between the title and the buttons, one to a row, scrolling when they do not fit. */
+	private class SettingsList extends ContainerObjectSelectionList<SettingsList.Row> {
+		/** A widget's height and the gap under it; a row of text takes two lines. */
+		private static final int ROW_HEIGHT = 25;
+
+		SettingsList() {
+			super(RailwayConfigScreen.this.minecraft, RailwayConfigScreen.this.width, RailwayConfigScreen.this.height,
+					0, 0, ROW_HEIGHT);
+			setRenderBackground(false);
+			setRenderTopAndBottom(false);
+		}
+
+		void addWidget(AbstractWidget widget) {
+			addEntry(new Row(widget, List.of()));
+		}
+
+		void addText(String text) {
+			addEntry(new Row(null, font.split(Component.literal(text), WIDTH)));
+		}
+
+		@Override
+		public int getRowWidth() {
+			return WIDTH;
+		}
+
+		@Override
+		protected int getScrollbarPosition() {
+			return width / 2 + WIDTH / 2 + 10;
+		}
+
+		/** One widget, or up to two lines of text. */
+		private class Row extends ContainerObjectSelectionList.Entry<Row> {
+			private final AbstractWidget widget;
+			private final List<FormattedCharSequence> lines;
+
+			Row(AbstractWidget widget, List<FormattedCharSequence> lines) {
+				this.widget = widget;
+				this.lines = lines;
+			}
+
+			@Override
+			public void render(GuiGraphics graphics, int index, int top, int left, int rowWidth, int rowHeight,
+					int mouseX, int mouseY, boolean hovered, float partialTick) {
+				if (widget != null) {
+					widget.setX(left);
+					widget.setY(top);
+					widget.render(graphics, mouseX, mouseY, partialTick);
+					return;
+				}
+				for (int i = 0; i < lines.size(); i++) {
+					graphics.drawCenteredString(font, lines.get(i), left + rowWidth / 2, top + i * font.lineHeight,
+							0xFFFFFF);
+				}
+			}
+
+			@Override
+			public List<? extends GuiEventListener> children() {
+				return widget == null ? List.of() : List.of(widget);
+			}
+
+			@Override
+			public List<? extends NarratableEntry> narratables() {
+				return widget == null ? List.of() : List.of(widget);
+			}
+		}
+	}
+
 	/** A slider over whole numbers in steps. */
 	private static class IntSlider extends AbstractSliderButton {
 		private final int min;
@@ -239,13 +319,13 @@ public class RailwayConfigScreen extends Screen {
 			this.step = step;
 			this.label = label;
 			this.apply = apply;
-			this.value = (Math.clamp(current, min, max) - min) / (double) (max - min);
+			this.value = (Mth.clamp(current, min, max) - min) / (double) (max - min);
 			updateMessage();
 		}
 
 		private int current() {
 			int raw = min + (int) Math.round(value * (max - min));
-			return Math.clamp(min + Math.round((raw - min) / (float) step) * step, min, max);
+			return Mth.clamp(min + Math.round((raw - min) / (float) step) * step, min, max);
 		}
 
 		@Override

@@ -14,7 +14,6 @@ import java.util.TreeMap;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
-import net.minecraft.world.level.saveddata.maps.MapId;
 import net.valcheff.villagerailways.network.NetworkPlanner.VillagePair;
 
 /**
@@ -53,13 +52,13 @@ public final class NetworkMaps {
 	}
 
 	/** Blocks one pixel of a map covers, or 0 for a map drawn at its vanilla scale. */
-	public static int blocksPerPixel(MapId id) {
+	public static int blocksPerPixel(int id) {
 		NetworkMaps maps = current;
 		if (maps == null) {
 			return 0;
 		}
 		synchronized (maps) {
-			return maps.blocksPerPixel.getOrDefault(id.id(), 0);
+			return maps.blocksPerPixel.getOrDefault(id, 0);
 		}
 	}
 
@@ -72,26 +71,26 @@ public final class NetworkMaps {
 	}
 
 	/** The maps on the walls of all western stations. */
-	public static List<MapId> wallMaps() {
+	public static List<Integer> wallMaps() {
 		NetworkMaps maps = loaded();
 		synchronized (maps) {
-			return maps.walls.values().stream().flatMap(List::stream).map(MapId::new).toList();
+			return maps.walls.values().stream().flatMap(List::stream).toList();
 		}
 	}
 
-	static void register(MapId id, int blocksPerPixel) throws IOException {
+	static void register(int id, int blocksPerPixel) throws IOException {
 		NetworkMaps maps = loaded();
 		synchronized (maps) {
-			maps.blocksPerPixel.put(id.id(), blocksPerPixel);
+			maps.blocksPerPixel.put(id, blocksPerPixel);
 			maps.write("maps.json", maps.blocksPerPixel, SCALES);
 		}
 	}
 
 	/** Notes the maps hung on the wall of a western station. */
-	public static void registerWall(VillagePair station, List<MapId> ids) throws IOException {
+	public static void registerWall(VillagePair station, List<Integer> ids) throws IOException {
 		NetworkMaps maps = loaded();
 		synchronized (maps) {
-			maps.walls.put(key(station), ids.stream().map(MapId::id).toList());
+			maps.walls.put(key(station), List.copyOf(ids));
 			maps.write("walls.json", maps.walls, WALLS);
 		}
 	}

@@ -3,6 +3,7 @@ package net.valcheff.villagerailways.network;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import net.minecraft.util.Mth;
 
 /**
  * Where the one station of a village stands and where its lines meet it.
@@ -141,7 +142,7 @@ public final class StationLayout {
 		}
 		int low = (alongX ? village.minX() : village.minZ()) + HALF_LENGTH;
 		int high = (alongX ? village.maxX() : village.maxZ()) - HALF_LENGTH;
-		side = low <= high ? Math.clamp(side, low, high) : (low + high) / 2;
+		side = low <= high ? Mth.clamp(side, low, high) : (low + high) / 2;
 		Point middle = alongX ? new Point(side, edge) : new Point(edge, side);
 		return new Station(middle, alongX ? 0 : 1, out);
 	}
@@ -152,7 +153,7 @@ public final class StationLayout {
 
 	/** The station a track's corners describe: its middle, the way to its second end, and the way out of the village. */
 	public static Station of(List<Point> track, Village village) {
-		Point first = track.getFirst();
+		Point first = track.get(0);
 		Point middle = track.get(1);
 		int along = ExitFinder.direction(first, middle);
 		int out = (along + 1) % 4;

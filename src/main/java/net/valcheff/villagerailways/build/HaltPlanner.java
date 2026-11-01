@@ -10,6 +10,7 @@ import net.valcheff.villagerailways.profile.Section;
 import net.valcheff.villagerailways.profile.TerrainSampler;
 import net.valcheff.villagerailways.profile.TrackPlan;
 import net.valcheff.villagerailways.profile.TrackPlanner;
+import net.minecraft.util.Mth;
 
 /**
  * Picks where a line gets a halt: a small hut on a platform beside the track, where riders can take a minecart.
@@ -168,8 +169,8 @@ public final class HaltPlanner {
 		for (int k = 1; k < path.size(); k++) {
 			Point from = path.get(k - 1);
 			Point to = path.get(k);
-			int nearestX = Math.clamp(x, Math.min(from.x(), to.x()), Math.max(from.x(), to.x()));
-			int nearestZ = Math.clamp(z, Math.min(from.z(), to.z()), Math.max(from.z(), to.z()));
+			int nearestX = Mth.clamp(x, Math.min(from.x(), to.x()), Math.max(from.x(), to.x()));
+			int nearestZ = Mth.clamp(z, Math.min(from.z(), to.z()), Math.max(from.z(), to.z()));
 			long dx = x - nearestX;
 			long dz = z - nearestZ;
 			if (dx * dx + dz * dz <= (long) clearance * clearance) {

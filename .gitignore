@@ -17,6 +17,6 @@ notes/
 .project
 .settings/
 *.launch
-neoforge/build/
+forge/build/
 paper/build/
 paper/run/

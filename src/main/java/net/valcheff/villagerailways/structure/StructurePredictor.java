@@ -141,7 +141,7 @@ public class StructurePredictor {
 	private StructureStart pickStart(StructureSet set, ChunkPos chunk) {
 		List<StructureSet.StructureSelectionEntry> entries = new ArrayList<>(set.structures());
 		if (entries.size() == 1) {
-			return tryGenerate(entries.getFirst(), chunk);
+			return tryGenerate(entries.get(0), chunk);
 		}
 		WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
 		random.setLargeFeatureSeed(structureState.getLevelSeed(), chunk.x, chunk.z);
@@ -176,8 +176,8 @@ public class StructurePredictor {
 	}
 
 	private PredictedStructure toPrediction(StructureStart start, ChunkPos chunk) {
-		String name = structures.wrapAsHolder(start.getStructure()).getRegisteredName();
-		BlockPos center = start.getPieces().getFirst().getBoundingBox().getCenter();
+		String name = structures.getKey(start.getStructure()).toString();
+		BlockPos center = start.getPieces().get(0).getBoundingBox().getCenter();
 		List<BoundingBox> buildings = start.getPieces().stream()
 				.filter(piece -> !isStreet(piece))
 				.map(StructurePiece::getBoundingBox)

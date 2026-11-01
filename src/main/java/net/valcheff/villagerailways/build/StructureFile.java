@@ -9,7 +9,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
@@ -89,7 +88,7 @@ final class StructureFile {
 			if (in == null) {
 				throw new IllegalStateException("Missing structure " + resource);
 			}
-			return NbtIo.readCompressed(in, NbtAccounter.unlimitedHeap());
+			return NbtIo.readCompressed(in);
 		} catch (IOException e) {
 			throw new IllegalStateException("Could not read structure " + resource, e);
 		}
@@ -118,7 +117,7 @@ final class StructureFile {
 	}
 
 	private static BlockState state(CompoundTag tag) {
-		ResourceLocation id = ResourceLocation.parse(tag.getString("Name"));
+		ResourceLocation id = new ResourceLocation(tag.getString("Name"));
 		Block block = BuiltInRegistries.BLOCK.get(id);
 		if (block == Blocks.AIR && !id.getPath().equals("air")) {
 			throw new IllegalStateException("Unknown block " + id + " in a structure");

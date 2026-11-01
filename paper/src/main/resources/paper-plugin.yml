@@ -3,6 +3,6 @@ version: '${version}'
 main: net.valcheff.villagerailways.paper.PaperPlugin
 # Before the worlds load, so the lines round spawn are planned before its chunks generate.
 load: STARTUP
-api-version: '1.21'
+api-version: '1.20'
 description: Links villages with minecart railway lines built from vanilla blocks. Works with vanilla clients.
 authors: [SasnycoN]

@@ -69,7 +69,7 @@ class NetworkPlannerTest {
 		assertEquals(60 + SETTINGS.stationMargin(), west.x(), "station of the west village at " + west);
 		assertEquals(800 - 60 - SETTINGS.stationMargin(), east.x(), "station of the east village at " + east);
 		// Facing each other, the line runs from middle to middle in one straight.
-		assertEquals(List.of(west, east), planner.links().getFirst().path());
+		assertEquals(List.of(west, east), planner.links().get(0).path());
 	}
 
 	@Test
@@ -155,7 +155,7 @@ class NetworkPlannerTest {
 		exploreAll(planner, villages, ACCEPT_ALL);
 		List<Link> trunks = planner.links().stream().filter(Link::trunk).toList();
 		assertEquals(1, trunks.size());
-		assertTrue(trunks.getFirst().connects(2) && trunks.getFirst().connects(4), "nearest villages of the two groups");
+		assertTrue(trunks.get(0).connects(2) && trunks.get(0).connects(4), "nearest villages of the two groups");
 		assertNetworkRules(planner);
 	}
 
@@ -173,11 +173,11 @@ class NetworkPlannerTest {
 		StationLayout.Station start = StationLayout.of(planner.stationOf(first.id()).path(), first);
 		StationLayout.Station end = StationLayout.of(planner.stationOf(second.id()).path(), second);
 		List<Point> path = trunk.path();
-		assertEquals(start.end(StationLayout.Slot.FIRST_END), path.getFirst());
-		assertEquals(end.end(StationLayout.Slot.SECOND_END), path.getLast());
+		assertEquals(start.end(StationLayout.Slot.FIRST_END), path.get(0));
+		assertEquals(end.end(StationLayout.Slot.SECOND_END), path.get(path.size() - 1));
 		// The trunk's second rail, on its left, comes out on the village side of each station.
 		assertTrue(leftFaces(path.get(0), path.get(1), first.center()), "second rail away from " + first.id());
-		assertTrue(leftFaces(path.get(path.size() - 2), path.getLast(), second.center()), "second rail away from " + second.id());
+		assertTrue(leftFaces(path.get(path.size() - 2), path.get(path.size() - 1), second.center()), "second rail away from " + second.id());
 		assertNetworkRules(planner);
 	}
 
@@ -247,7 +247,7 @@ class NetworkPlannerTest {
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
 		exploreAll(planner, List.of(village(1, 0, 0), village(2, 800, 400)), obstacle);
 		assertEquals(1, planner.links().size());
-		assertTrue(obstacle.accepts(planner.links().getFirst().path()));
+		assertTrue(obstacle.accepts(planner.links().get(0).path()));
 	}
 
 	@Test
@@ -299,20 +299,20 @@ class NetworkPlannerTest {
 			Village b = byId.get(link.to());
 			long maxLength = link.trunk() ? SETTINGS.maxGroupLength() : SETTINGS.maxLength();
 			assertTrue(a.center().distanceSq(b.center()) <= maxLength * maxLength);
-			RouteStepperTest.assertAxisAligned(link.path(), link.path().getFirst(), link.path().getLast());
+			RouteStepperTest.assertAxisAligned(link.path(), link.path().get(0), link.path().get(link.path().size() - 1));
 			for (Village other : byId.values()) {
 				for (int i = 1; i < link.path().size(); i++) {
 					assertFalse(other.touches(link.path().get(i - 1), link.path().get(i), 0),
 							"line " + link.from() + "-" + link.to() + " passes through village " + other.id());
 				}
 			}
-			assertTrue(atSlot(planner.stationOf(link.from()), link.path().getFirst(), byId.get(link.from())),
+			assertTrue(atSlot(planner.stationOf(link.from()), link.path().get(0), byId.get(link.from())),
 					"line " + link.path() + " does not start at a slot of " + planner.stationOf(link.from()));
-			assertTrue(atSlot(planner.stationOf(link.to()), link.path().getLast(), byId.get(link.to())),
+			assertTrue(atSlot(planner.stationOf(link.to()), link.path().get(link.path().size() - 1), byId.get(link.to())),
 					"line " + link.path() + " does not end at a slot of " + planner.stationOf(link.to()));
 			List<Point> path = link.path();
 			assertTrue(length(path.get(0), path.get(1)) >= ExitFinder.APPROACH
-					&& length(path.get(path.size() - 2), path.getLast()) >= ExitFinder.APPROACH,
+					&& length(path.get(path.size() - 2), path.get(path.size() - 1)) >= ExitFinder.APPROACH,
 					"line " + path + " turns within " + ExitFinder.APPROACH + " blocks of a station");
 			for (Link station : planner.stations()) {
 				for (int i = 2; i < link.path().size() - 1; i++) {
@@ -326,8 +326,8 @@ class NetworkPlannerTest {
 		degree.forEach((village, count) -> assertTrue(count <= SETTINGS.maxLinks(), village + " has " + count));
 		Map<Point, Integer> slotUse = new HashMap<>();
 		for (Link link : links) {
-			slotUse.merge(link.path().getFirst(), 1, Integer::sum);
-			slotUse.merge(link.path().getLast(), 1, Integer::sum);
+			slotUse.merge(link.path().get(0), 1, Integer::sum);
+			slotUse.merge(link.path().get(link.path().size() - 1), 1, Integer::sum);
 		}
 		slotUse.forEach((slot, count) -> assertEquals(1, count, "lines meeting at " + slot));
 		for (int i = 0; i < links.size(); i++) {

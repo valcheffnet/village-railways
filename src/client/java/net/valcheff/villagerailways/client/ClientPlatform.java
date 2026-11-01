@@ -1,14 +1,15 @@
 package net.valcheff.villagerailways.client;
 
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.valcheff.villagerailways.ConfigSync;
 
-/** Client networking from the loader (Fabric or NeoForge), set by its client entry point. */
+/** Client networking from the loader (Fabric or Forge), set by its client entry point. */
 public final class ClientPlatform {
 	public interface Services {
 		/** Whether the server listens on this channel: it runs the mod. */
-		boolean canSend(CustomPacketPayload.Type<?> type);
+		boolean canSend(ResourceLocation channel);
 
-		void send(CustomPacketPayload payload);
+		void send(ConfigSync.Message message);
 	}
 
 	private static Services services;

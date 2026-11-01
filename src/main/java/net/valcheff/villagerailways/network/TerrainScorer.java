@@ -54,7 +54,7 @@ public class TerrainScorer implements NetworkPlanner.RouteScorer {
 				samples.add(column(to.x(), to.z()));
 			}
 		}
-		samples.add(column(path.getLast().x(), path.getLast().z()));
+		samples.add(column(path.get(path.size() - 1).x(), path.get(path.size() - 1).z()));
 
 		double score = CORNER * cornerSamples.size();
 		for (int i = 0; i < samples.size(); i++) {

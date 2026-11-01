@@ -24,10 +24,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.decoration.GlowItemFrame;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
@@ -52,6 +52,7 @@ import net.valcheff.villagerailways.profile.TrackPlan;
 import net.valcheff.villagerailways.profile.TrackPlanner;
 import net.valcheff.villagerailways.profile.TrackSettings;
 import net.valcheff.villagerailways.structure.StructurePredictor;
+import com.google.common.collect.Lists;
 
 /**
  * Runs the railway network of the overworld: plans lines ahead of chunk generation on a background thread and builds
@@ -413,7 +414,7 @@ public class RailwayService {
 					level.addFreshEntity(frame);
 				}
 			}
-			NetworkMaps.registerWall(station.key(), maps.stream().map(map -> map.get(DataComponents.MAP_ID)).toList());
+			NetworkMaps.registerWall(station.key(), maps.stream().map(MapItem::getMapId).toList());
 		} catch (IOException e) {
 			VillageRailways.LOGGER.error("Could not hang the map wall of the station at {}", at, e);
 		}
@@ -584,10 +585,10 @@ public class RailwayService {
 		// At a western station a line's second rail, on its left, runs on into the station's second track: out of a
 		// station at its first end, into one at its second. The line is laid out the way round that lets it do so at
 		// more of its ends; at an end where it cannot, it comes in single.
-		boolean openStart = isWesternEnd(from, link.path().getFirst(), StationLayout.Slot.FIRST_END, link);
-		boolean openEnd = isWesternEnd(to, link.path().getLast(), StationLayout.Slot.SECOND_END, link);
-		boolean backStart = isWesternEnd(to, link.path().getLast(), StationLayout.Slot.FIRST_END, link);
-		boolean backEnd = isWesternEnd(from, link.path().getFirst(), StationLayout.Slot.SECOND_END, link);
+		boolean openStart = isWesternEnd(from, link.path().get(0), StationLayout.Slot.FIRST_END, link);
+		boolean openEnd = isWesternEnd(to, link.path().get(link.path().size() - 1), StationLayout.Slot.SECOND_END, link);
+		boolean backStart = isWesternEnd(to, link.path().get(link.path().size() - 1), StationLayout.Slot.FIRST_END, link);
+		boolean backEnd = isWesternEnd(from, link.path().get(0), StationLayout.Slot.SECOND_END, link);
 		boolean reversed = count(backStart, backEnd) > count(openStart, openEnd);
 		if (reversed) {
 			openStart = backStart;
@@ -596,7 +597,7 @@ public class RailwayService {
 			from = to;
 			to = swap;
 		}
-		List<Point> path = reversed ? link.path().reversed() : link.path();
+		List<Point> path = reversed ? Lists.reverse(link.path()) : link.path();
 		List<Long> single = new ArrayList<>();
 		if (!openStart) {
 			single.add(from.from());
@@ -813,7 +814,7 @@ public class RailwayService {
 		Point outer = layout.end(slot == StationLayout.Slot.FIRST_END ? StationLayout.Slot.OUTER_FIRST
 				: StationLayout.Slot.OUTER_SECOND);
 		return layout.end(slot).equals(end) && network.planner().links().stream().noneMatch(other -> other != line
-				&& (other.path().getFirst().equals(outer) || other.path().getLast().equals(outer)));
+				&& (other.path().get(0).equals(outer) || other.path().get(other.path().size() - 1).equals(outer)));
 	}
 
 	private Village villageOf(long id) {

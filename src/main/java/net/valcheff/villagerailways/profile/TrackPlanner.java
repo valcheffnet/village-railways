@@ -178,7 +178,7 @@ public class TrackPlanner {
 			if (bridge && start < 0) {
 				start = i;
 			} else if (!bridge && start >= 0) {
-				int[] previous = runs.isEmpty() ? null : runs.getLast();
+				int[] previous = runs.isEmpty() ? null : runs.get(runs.size() - 1);
 				if (previous != null && start - previous[1] - 1 <= MAX_BRIDGE_GAP
 						&& isGround(line, previous[1] + 1, start - 1)) {
 					previous[1] = i - 1;
@@ -389,7 +389,7 @@ public class TrackPlanner {
 				return;
 			}
 			// A ramp at a corner the second rail cannot take: the pieces either side of the corner.
-			broken = corners.getFirst();
+			broken = corners.get(0);
 		}
 		addSecondRails(line, split, bridged, from, broken - 1, seconds, openFrom, false);
 		addSecondRails(line, split, bridged, broken + 1, to, seconds, false, openTo);
@@ -510,8 +510,8 @@ public class TrackPlanner {
 		int[] z = new int[length];
 		boolean[] corner = new boolean[length];
 		int index = 0;
-		x[0] = path.getFirst().x();
-		z[0] = path.getFirst().z();
+		x[0] = path.get(0).x();
+		z[0] = path.get(0).z();
 		for (int i = 1; i < path.size(); i++) {
 			Point from = path.get(i - 1);
 			Point to = path.get(i);

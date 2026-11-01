@@ -1,9 +1,8 @@
 package net.valcheff.villagerailways.mixin;
 
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapId;
+import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.valcheff.villagerailways.map.NetworkMaps;
 import org.spongepowered.asm.mixin.Final;
@@ -37,7 +36,7 @@ abstract class MapItemSavedDataMixin {
 
 	@Inject(method = "tickCarriedBy", at = @At("HEAD"))
 	private void villageRailways$findScale(Player player, ItemStack stack, CallbackInfo info) {
-		MapId id = stack.get(DataComponents.MAP_ID);
+		Integer id = MapItem.getMapId(stack);
 		villageRailways$blocksPerPixel = id == null ? 0 : NetworkMaps.blocksPerPixel(id);
 	}
 

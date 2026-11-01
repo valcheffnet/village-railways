@@ -87,7 +87,7 @@ final class ExitGrid {
 	private static boolean meets(List<Point> path, Point point, List<Point> stations) {
 		for (Point station : stations) {
 			if (point.distanceSq(station) <= MEETING_SQ
-					&& (path.getFirst().equals(station) || path.getLast().equals(station))) {
+					&& (path.get(0).equals(station) || path.get(path.size() - 1).equals(station))) {
 				return true;
 			}
 		}

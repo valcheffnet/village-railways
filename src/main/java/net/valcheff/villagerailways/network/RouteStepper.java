@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.util.Mth;
 
 /**
  * Lays a line between two points out of straights along the x and z axes.
@@ -84,7 +85,7 @@ public final class RouteStepper {
 		int main = mainIsX ? to.x() - from.x() : to.z() - from.z();
 		int side = mainIsX ? to.z() - from.z() : to.x() - from.x();
 		int room = Math.max(0, Math.abs(main) / (steps + 1) - settings.minRun());
-		int offset = Integer.signum(main) * Math.clamp(shift, -room, room);
+		int offset = Integer.signum(main) * Mth.clamp(shift, -room, room);
 
 		List<Point> corners = new ArrayList<>();
 		corners.add(from);
@@ -112,7 +113,7 @@ public final class RouteStepper {
 			return 1;
 		}
 		int steps = Math.max(1, (int) Math.round(side / PREFERRED_RUN));
-		steps = Math.max(steps, Math.ceilDiv(side, settings.maxRun()));
+		steps = Math.max(steps, Mth.positiveCeilDiv(side, settings.maxRun()));
 		while (steps > 1 && (side / steps < settings.minRun() || main / (steps + 1) < settings.minRun())) {
 			steps--;
 		}
@@ -120,7 +121,7 @@ public final class RouteStepper {
 	}
 
 	private static void add(List<Point> corners, Point point) {
-		if (!corners.getLast().equals(point)) {
+		if (!corners.get(corners.size() - 1).equals(point)) {
 			corners.add(point);
 		}
 	}

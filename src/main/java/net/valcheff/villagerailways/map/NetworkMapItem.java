@@ -5,22 +5,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.MapColor;
-import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
-import net.minecraft.world.level.saveddata.maps.MapId;
+import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.valcheff.villagerailways.network.Link;
 import net.valcheff.villagerailways.network.NetworkPlanner;
 import net.valcheff.villagerailways.network.Point;
 import net.valcheff.villagerailways.network.Village;
+import net.minecraft.util.Mth;
 
 /**
  * A vanilla map with the railway network drawn on it and nothing else: village footprints and centres, and the lines
@@ -52,7 +52,7 @@ public final class NetworkMapItem {
 
 	/** A map of the network centred on a position, reaching at least {@code radius} blocks from it each way. */
 	public static ItemStack create(ServerLevel level, NetworkPlanner planner, int x, int z, int radius) throws IOException {
-		return create(level, planner, x, z, Math.ceilDiv(2 * radius, SIZE), Component.literal("Railway network"));
+		return create(level, planner, x, z, Mth.positiveCeilDiv(2 * radius, SIZE), Component.literal("Railway network"));
 	}
 
 	/**
@@ -62,7 +62,7 @@ public final class NetworkMapItem {
 	 */
 	public static List<ItemStack> wall(ServerLevel level, NetworkPlanner planner, int x, int z, int count, int radius)
 			throws IOException {
-		int blocksPerPixel = Math.ceilDiv(2 * radius, count * SIZE);
+		int blocksPerPixel = Mth.positiveCeilDiv(2 * radius, count * SIZE);
 		int width = SIZE * blocksPerPixel;
 		List<ItemStack> maps = new ArrayList<>();
 		for (int row = 0; row < count; row++) {
@@ -81,7 +81,7 @@ public final class NetworkMapItem {
 			throws IOException {
 		List<ItemStack> maps = wall(level, planner, station.getX(), station.getZ(), STATION_WALL, DEFAULT_RADIUS);
 		for (ItemStack map : maps) {
-			MapItemSavedData.addTargetDecoration(map, station, "station", MapDecorationTypes.RED_X);
+			MapItemSavedData.addTargetDecoration(map, station, "station", MapDecoration.Type.RED_X);
 		}
 		return maps;
 	}
@@ -89,13 +89,13 @@ public final class NetworkMapItem {
 	/** One map of the network round a western station, for over its door, with a red X where the station stands. */
 	public static ItemStack stationMap(ServerLevel level, NetworkPlanner planner, BlockPos station) throws IOException {
 		ItemStack map = create(level, planner, station.getX(), station.getZ(), DEFAULT_RADIUS);
-		MapItemSavedData.addTargetDecoration(map, station, "station", MapDecorationTypes.RED_X);
+		MapItemSavedData.addTargetDecoration(map, station, "station", MapDecoration.Type.RED_X);
 		return map;
 	}
 
 	/** Draws a network map again with the network as it is now, so a map on a wall follows the lines being built. */
-	public static void redraw(ServerLevel level, NetworkPlanner planner, MapId id) {
-		MapItemSavedData data = level.getMapData(id);
+	public static void redraw(ServerLevel level, NetworkPlanner planner, int id) {
+		MapItemSavedData data = level.getMapData(MapItem.makeKey(id));
 		if (data == null) {
 			return;
 		}
@@ -111,15 +111,16 @@ public final class NetworkMapItem {
 			Component name) throws IOException {
 		byte scale = (byte) Math.min(MapItemSavedData.MAX_SCALE, 31 - Integer.numberOfLeadingZeros(blocksPerPixel));
 		MapItemSavedData data = blank(level, x, z, scale);
-		MapId id = level.getFreeMapId();
-		level.setMapData(id, data);
+		int id = level.getFreeMapId();
+		level.setMapData(MapItem.makeKey(id), data);
 		if (blocksPerPixel != 1 << scale) {
 			NetworkMaps.register(id, blocksPerPixel);
 		}
 		draw(data, planner, blocksPerPixel);
 		ItemStack stack = new ItemStack(Items.FILLED_MAP);
-		stack.set(DataComponents.MAP_ID, id);
-		stack.set(DataComponents.ITEM_NAME, name);
+		stack.getOrCreateTag().putInt("map", id);
+		// Not in italics, as the game shows a name it gave the item rather than a player.
+		stack.setHoverName(name.copy().withStyle(style -> style.withItalic(false)));
 		return stack;
 	}
 
@@ -172,7 +173,7 @@ public final class NetworkMapItem {
 	 */
 	private static MapItemSavedData blank(ServerLevel level, int x, int z, byte scale) {
 		CompoundTag tag = new CompoundTag();
-		tag.put("dimension", Level.RESOURCE_KEY_CODEC.encodeStart(NbtOps.INSTANCE, level.dimension()).getOrThrow());
+		tag.put("dimension", Level.RESOURCE_KEY_CODEC.encodeStart(NbtOps.INSTANCE, level.dimension()).result().orElseThrow());
 		tag.putInt("xCenter", x);
 		tag.putInt("zCenter", z);
 		tag.putByte("scale", scale);
@@ -180,7 +181,7 @@ public final class NetworkMapItem {
 		tag.putBoolean("trackingPosition", true);
 		tag.putBoolean("unlimitedTracking", false);
 		tag.putBoolean("locked", true);
-		return MapItemSavedData.load(tag, level.registryAccess());
+		return MapItemSavedData.load(tag);
 	}
 
 	/** The map's pixels, addressed by block position. */

@@ -48,13 +48,13 @@ class RouteStepperTest {
 		List<Point> route = RouteStepper.route(new Point(0, 0), new Point(100, 300), true, SETTINGS);
 		assertAxisAligned(route, new Point(0, 0), new Point(100, 300));
 		assertEquals(0, route.get(1).z(), "first straight runs along x");
-		assertEquals(300, route.getLast().z());
+		assertEquals(300, route.get(route.size() - 1).z());
 		assertEquals(route.get(route.size() - 2).z(), 300, "last straight runs along x");
 	}
 
 	static void assertAxisAligned(List<Point> route, Point from, Point to) {
-		assertEquals(from, route.getFirst());
-		assertEquals(to, route.getLast());
+		assertEquals(from, route.get(0));
+		assertEquals(to, route.get(route.size() - 1));
 		for (int i = 1; i < route.size(); i++) {
 			Point a = route.get(i - 1);
 			Point b = route.get(i);

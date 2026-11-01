@@ -296,7 +296,7 @@ public final class LineBuilder {
 	 */
 	public static void build(WorldGenLevel level, ChunkPos chunk, List<TrackPlan> plans, Reachable reachable,
 			Built built, Map<TrackPlan, int[]> paired, TrackSettings settings) {
-		QuietWrites.run(level, () -> new LineBuilder(level, chunk, plans, reachable, built, paired, settings).build());
+		QuietWrites.run(() -> new LineBuilder(level, chunk, plans, reachable, built, paired, settings).build());
 	}
 
 	private void build() {

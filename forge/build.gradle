@@ -1,0 +1,93 @@
+plugins {
+	id 'net.minecraftforge.gradle' version '[6.0.24,6.2)'
+	id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+// The Forge build shares the mod's code with the Fabric build in the parent folder: everything under src/main and
+// src/client except the Fabric entry points, plus the Forge entry points here. Run it from this folder.
+def root = file('..')
+def rootProps = new Properties()
+file('../gradle.properties').withInputStream { rootProps.load(it) }
+
+version = rootProps.getProperty('version')
+group = 'net.valcheff'
+
+base {
+	archivesName = 'village-railways-forge'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+sourceSets.main {
+	java {
+		srcDirs = ['src/main/java', "${root}/src/main/java", "${root}/src/client/java"]
+		exclude '**/fabric/**'
+	}
+	resources {
+		srcDirs = ['src/main/resources', "${root}/src/main/resources", "${root}/src/client/resources"]
+		exclude 'fabric.mod.json'
+	}
+}
+
+minecraft {
+	mappings channel: 'official', version: minecraft_version
+
+	runs {
+		configureEach {
+			workingDirectory project.file('run')
+			property 'forge.logging.console.level', 'info'
+			mods {
+				village_railways {
+					source sourceSets.main
+				}
+			}
+		}
+		client {
+		}
+		server {
+			args '--nogui'
+		}
+	}
+}
+
+mixin {
+	add sourceSets.main, 'village_railways.refmap.json'
+	config 'village_railways.mixins.json'
+	config 'village_railways.client.mixins.json'
+}
+
+dependencies {
+	minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+	annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+var modMetadata = [
+	minecraft_version_range: minecraft_version_range,
+	forge_version_range    : forge_version_range,
+	mod_version            : project.version,
+]
+
+processResources {
+	inputs.properties modMetadata
+	filesMatching('META-INF/mods.toml') {
+		expand modMetadata
+	}
+	// Forge runs the game under its own names, so the mixins need the refmap the build writes.
+	filesMatching('*.mixins.json') {
+		filter { line -> line.replace('"package":', '"refmap": "village_railways.refmap.json",\n\t"package":') }
+	}
+}
+sourceSets.main.resources.srcDir 'src/main/templates'
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 17
+}
+
+jar {
+	manifest {
+		attributes 'MixinConfigs': 'village_railways.mixins.json,village_railways.client.mixins.json'
+	}
+	// Forge 1.20.1 runs the game under its own names; the jar is mapped to them after it is built.
+	finalizedBy 'reobfJar'
+}
