@@ -8,7 +8,7 @@ Villages in Minecraft sit hundreds or sometimes thousands of blocks apart with n
 
 Players join with a normal vanilla client and don't need to install anything.
 
-This branch is Minecraft 26.3; the 26.2, 26.1, 1.21.11 and 1.21.1 versions are on their own branches.
+This branch is Minecraft 26.3; the 26.2, 26.1, 1.21.11, 1.21.1 and 1.20.1 versions are on their own branches.
 
 ## Screenshots
 
@@ -92,6 +92,9 @@ Plans for the next versions, in no set order:
 | 1.21.1 | Fabric | [village-railways-fabric-1.0.2+1.21.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.2/village-railways-fabric-1.0.2+1.21.1.jar) | Fabric Loader 0.18+, Fabric API, Java 21 |
 | 1.21.1 | NeoForge | [village-railways-neoforge-1.0.2+1.21.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.2/village-railways-neoforge-1.0.2+1.21.1.jar) | NeoForge 21.1.265+, Java 21 |
 | 1.21.1 | Paper | [village-railways-paper-1.0.2+1.21.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.2/village-railways-paper-1.0.2+1.21.1.jar) | Paper 1.21.1, Java 21 |
+| 1.20.1 | Fabric | [village-railways-fabric-1.0.2+1.20.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.2/village-railways-fabric-1.0.2+1.20.1.jar) | Fabric Loader 0.18+, Fabric API, Java 17 |
+| 1.20.1 | Forge | [village-railways-forge-1.0.2+1.20.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.2/village-railways-forge-1.0.2+1.20.1.jar) | Forge 47+, Java 17 |
+| 1.20.1 | Paper | [village-railways-paper-1.0.2+1.20.1.jar](https://github.com/valcheffnet/village-railways/releases/download/v1.0.2/village-railways-paper-1.0.2+1.20.1.jar) | Paper 1.20.1, Java 17 |
 
 Fabric and NeoForge jars go in the `mods` folder, the Paper jar in `plugins`. Mod Menu is optional on Fabric and only adds the settings screen.
 
