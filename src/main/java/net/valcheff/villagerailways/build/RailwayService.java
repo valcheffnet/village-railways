@@ -84,8 +84,8 @@ public class RailwayService {
 	/** Chunks given their late lines per tick, so a burst does not stall the server. */
 	private static final int LATER_PER_TICK = 2;
 	/**
-	 * How far round its villages a trunk line stays single: past the area where lines find their way out to their
-	 * stations, with the other lines of the village close by.
+	 * How far round a village with an ordinary station other lines find their way out to it: a trunk line's second rail
+	 * runs on there only where it keeps clear of them and of the station.
 	 */
 	private static final int SINGLE_NEAR_VILLAGE = 32;
 	/** How far round its track a western station builds: its house and platform, their eaves and the ground cleared. */
@@ -544,8 +544,8 @@ public class RailwayService {
 
 	/**
 	 * The block-by-block plan of a line or a station track, made once. A line runs from the rail height of one of its
-	 * stations to the other's, with its halts; a station track lies level. A trunk line is a double track away from
-	 * its villages, and any line over its bridges.
+	 * stations to the other's, with its halts; a station track lies level. A trunk line is a double track up to its
+	 * stations, and any line over its bridges.
 	 */
 	public Optional<TrackPlan> planOf(Link link) {
 		Optional<TrackPlan> cached = plans.get(link.key());
@@ -563,13 +563,13 @@ public class RailwayService {
 		}
 		List<Link> others = new ArrayList<>(planner.links());
 		others.addAll(planner.stations());
-		// At a western station a line's second rail, on its left, runs on into the station's second track: out of a
+		// At a two-track station a line's second rail, on its left, runs on into the station's second track: out of a
 		// station at its first end, into one at its second. The line is laid out the way round that lets it do so at
 		// more of its ends; at an end where it cannot, it comes in single.
-		boolean openStart = isWesternEnd(from, link.path().getFirst(), StationLayout.Slot.FIRST_END, link);
-		boolean openEnd = isWesternEnd(to, link.path().getLast(), StationLayout.Slot.SECOND_END, link);
-		boolean backStart = isWesternEnd(to, link.path().getLast(), StationLayout.Slot.FIRST_END, link);
-		boolean backEnd = isWesternEnd(from, link.path().getFirst(), StationLayout.Slot.SECOND_END, link);
+		boolean openStart = isTwoTrackEnd(from, link.path().getFirst(), StationLayout.Slot.FIRST_END, link);
+		boolean openEnd = isTwoTrackEnd(to, link.path().getLast(), StationLayout.Slot.SECOND_END, link);
+		boolean backStart = isTwoTrackEnd(to, link.path().getLast(), StationLayout.Slot.FIRST_END, link);
+		boolean backEnd = isTwoTrackEnd(from, link.path().getFirst(), StationLayout.Slot.SECOND_END, link);
 		boolean reversed = count(backStart, backEnd) > count(openStart, openEnd);
 		if (reversed) {
 			openStart = backStart;
@@ -579,19 +579,19 @@ public class RailwayService {
 			to = swap;
 		}
 		List<Point> path = reversed ? link.path().reversed() : link.path();
-		List<Long> single = new ArrayList<>();
+		List<Link> single = new ArrayList<>();
 		if (!openStart) {
-			single.add(from.from());
+			single.add(from);
 		}
 		if (!openEnd) {
-			single.add(to.from());
+			single.add(to);
 		}
-		TrackPlanner.Area doubled = link.trunk() ? awayFrom(planner, single) : null;
 		// A second rail keeps clear of every other track, but for the line's own stations, which it runs into.
 		List<Link> near = others.stream().filter(other -> !other.key().equals(link.key())
 				&& !(planner.isStation(other.key()) && link.connects(other.from()))).toList();
 		TrackPlanner.Area clear = (x, z) -> near.stream()
 				.noneMatch(other -> HaltPlanner.passesNear(other.path(), x, z, SECOND_RAIL_CLEARANCE));
+		TrackPlanner.Area doubled = link.trunk() ? trunkDoubled(planner, single, clear) : null;
 		Optional<TrackPlan> plan = Optional.ofNullable(trackPlanner.plan(path, heightOf(from), heightOf(to), doubled,
 				openStart, openEnd, clear))
 				.map(planned -> planned.withHalts(HaltPlanner.halts(planned, terrain::sample,
@@ -784,11 +784,11 @@ public class RailwayService {
 	}
 
 	/**
-	 * Whether a line's end is the {@code slot} of a western station whose second track beside it is free, so the
+	 * Whether a line's end is the {@code slot} of a two-track station whose second track beside it is free, so the
 	 * line can come in there as a double track.
 	 */
-	private boolean isWesternEnd(Link station, Point end, StationLayout.Slot slot, Link line) {
-		if (!station.trunk()) {
+	private boolean isTwoTrackEnd(Link station, Point end, StationLayout.Slot slot, Link line) {
+		if (!station.twoTrackStation()) {
 			return false;
 		}
 		StationLayout.Station layout = StationLayout.of(station.path(), villageOf(station.from()));
@@ -810,12 +810,26 @@ public class RailwayService {
 		return BuildState.REACH + TrackPlanner.DOUBLE_TRACK;
 	}
 
-	/** Everywhere farther than {@value #SINGLE_NEAR_VILLAGE} blocks from the footprints of the given villages. */
-	private static TrackPlanner.Area awayFrom(NetworkPlanner planner, List<Long> ids) {
+	/**
+	 * Where a trunk line runs double, given the ordinary stations at its ends: everywhere farther than
+	 * {@value #SINGLE_NEAR_VILLAGE} blocks from their villages' footprints, and nearer where {@code clear} lets it and
+	 * the second rail stays out of the village and of what the station builds round its track. So the second rail joins
+	 * the line just before such a station, wherever the ground lets it, instead of before a tunnel on the way in.
+	 */
+	private static TrackPlanner.Area trunkDoubled(NetworkPlanner planner, List<Link> stations, TrackPlanner.Area clear) {
+		List<Long> ids = stations.stream().map(Link::from).toList();
 		List<Village> ends = planner.villages().stream().filter(village -> ids.contains(village.id())).toList();
-		return (x, z) -> ends.stream().noneMatch(village -> x >= village.minX() - SINGLE_NEAR_VILLAGE
-				&& x <= village.maxX() + SINGLE_NEAR_VILLAGE && z >= village.minZ() - SINGLE_NEAR_VILLAGE
-				&& z <= village.maxZ() + SINGLE_NEAR_VILLAGE);
+		int stationClearance = BuildState.REACH + TrackPlanner.DOUBLE_TRACK;
+		return (x, z) -> ends.stream().noneMatch(village -> within(village, x, z, SINGLE_NEAR_VILLAGE))
+				|| clear.contains(x, z)
+				&& ends.stream().noneMatch(village -> within(village, x, z, TrackPlanner.DOUBLE_TRACK))
+				&& stations.stream().noneMatch(station -> HaltPlanner.passesNear(station.path(), x, z, stationClearance));
+	}
+
+	/** Whether a block lies within {@code margin} blocks of a village's footprint. */
+	private static boolean within(Village village, int x, int z, int margin) {
+		return x >= village.minX() - margin && x <= village.maxX() + margin && z >= village.minZ() - margin
+				&& z <= village.maxZ() + margin;
 	}
 
 	/** A new line may come in at the middle of its stations, whose plans then need their switch. */
@@ -846,13 +860,14 @@ public class RailwayService {
 	 */
 	private TrackPlan stationPlan(Link station) {
 		List<Point> track = station.path();
-		if (station.trunk()) {
-			// A western station: its track and second track straight through, the house beside them.
+		if (station.twoTrackStation()) {
+			// A western or small two-track station: its track and second track straight through, the house beside them.
 			int height = heightOf(station);
 			List<Point> second = StationLayout.of(track, villageOf(station.from())).secondTrack();
 			return trackPlanner.planStation(track, height)
 					.withSeconds(List.of(trackPlanner.planStationSecond(second, height)))
-					.withWestern(true);
+					.withWestern(station.trunk())
+					.withSmall(station.twoTracks());
 		}
 		Point middle = track.get(1);
 		List<Link> lines = network.planner().links();

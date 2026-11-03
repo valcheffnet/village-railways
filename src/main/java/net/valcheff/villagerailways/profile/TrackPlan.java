@@ -20,27 +20,37 @@ import net.minecraft.core.Direction;
  * @param seconds   the second rails of a double track, each running on the left of a stretch of this line
  * @param beside    on a second rail, for each block the block of its line it runs beside; empty on a line
  * @param western   whether this is the track of a western station, with its house on the left
+ * @param small     whether this is the track of a small station with two tracks, its structure laid with its own rails
  */
 public record TrackPlan(int[] x, int[] z, int[] track, int[] ground, int[] water, boolean[] corner, Section[] sections,
-		int[] halts, int[] junctions, List<TrackPlan> seconds, int[] beside, boolean western) {
+		int[] halts, int[] junctions, List<TrackPlan> seconds, int[] beside, boolean western, boolean small) {
+	public TrackPlan(int[] x, int[] z, int[] track, int[] ground, int[] water, boolean[] corner, Section[] sections,
+			int[] halts, int[] junctions, List<TrackPlan> seconds, int[] beside, boolean western) {
+		this(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western, false);
+	}
+
 	public int length() {
 		return x.length;
 	}
 
 	public TrackPlan withHalts(int[] halts) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western, small);
 	}
 
 	public TrackPlan withJunctions(int[] junctions) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western, small);
 	}
 
 	public TrackPlan withSeconds(List<TrackPlan> seconds) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western, small);
 	}
 
 	public TrackPlan withWestern(boolean western) {
-		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western);
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western, small);
+	}
+
+	public TrackPlan withSmall(boolean small) {
+		return new TrackPlan(x, z, track, ground, water, corner, sections, halts, junctions, seconds, beside, western, small);
 	}
 
 	/** Whether the rail at block i slopes: the block next to it on either side lies higher or lower. */

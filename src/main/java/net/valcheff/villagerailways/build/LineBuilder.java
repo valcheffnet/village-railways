@@ -166,6 +166,16 @@ public final class LineBuilder {
 	private static final int WESTERN_MIDDLE_X = 18;
 	private static final int WESTERN_TRACK_Z = 4;
 	private static final int WESTERN_RAIL_Y = 1;
+	/**
+	 * The small two-track station, a structure saved with a structure block, laid out like the western one: the tracks
+	 * run along x, the station track at z {@value #SMALL_TRACK_Z} and its second track two blocks lower, the rails
+	 * {@value #SMALL_RAIL_Y} blocks up, the middle at x {@value #SMALL_MIDDLE_X}, the house towards larger z. Its rails,
+	 * with the switches between the tracks and their levers, are its own.
+	 */
+	private static final Identifier SMALL_STATION = Identifier.fromNamespaceAndPath("village_railways", "small_station");
+	private static final int SMALL_MIDDLE_X = 5;
+	private static final int SMALL_TRACK_Z = 3;
+	private static final int SMALL_RAIL_Y = 2;
 	/** Where along the western house its two dispensers stand, by the door. */
 	private static final int WESTERN_DISPENSER_X = 22;
 	/** The middle frame of the map wall in the western house, on the wall facing the tracks. */
@@ -347,6 +357,10 @@ public final class LineBuilder {
 			plan = plans.get(planIndex);
 			if (plan.western()) {
 				placeWesternDispensers();
+			}
+			if (plan.small()) {
+				// Last, so its rails stay as the structure has them.
+				placeSmallStation();
 			}
 		}
 		secureAttachments();
@@ -1423,6 +1437,10 @@ public final class LineBuilder {
 		if (end) {
 			placeBuffer(i);
 		}
+		if (isSmallStation()) {
+			// The structure lays these rails.
+			return;
+		}
 		// Where a line meets its station track the track's rail stays, a switch where the line meets its middle.
 		if (end && level.getBlockState(pos.set(x, track, z)).getBlock() instanceof BaseRailBlock) {
 			return;
@@ -1673,10 +1691,58 @@ public final class LineBuilder {
 		return false;
 	}
 
-	/** Whether the current track is a western station's, or its second track, which have the house's own lamps. */
+	/** Whether the current track is a two-track station's, or its second track, which have the house's own lamps. */
 	private boolean isWesternStation() {
 		TrackPlan line = lineOf.get(plan);
-		return plan.western() || line != null && line.western();
+		return plan.western() || plan.small() || line != null && (line.western() || line.small());
+	}
+
+	/** Whether the current track is a small two-track station's, or its second track, whose rails its structure lays. */
+	private boolean isSmallStation() {
+		TrackPlan line = lineOf.get(plan);
+		return plan.small() || line != null && line.small();
+	}
+
+	/**
+	 * The small two-track station at the middle of the current station track, the part of it in this chunk, turned
+	 * like a western house: rails, switches and levers as the structure has them, its dispensers given minecarts, and
+	 * ground filled in under it.
+	 */
+	private void placeSmallStation() {
+		StructureTemplate station = level.getLevel().getStructureTemplateManager().get(SMALL_STATION).orElse(null);
+		if (station == null) {
+			return;
+		}
+		int middle = plan.length() / 2;
+		Direction out = plan.direction(middle, middle + 1).getCounterClockWise();
+		StructurePlaceSettings settings = new StructurePlaceSettings()
+				.setRotation(westernRotation(out))
+				.setRotationPivot(new BlockPos(SMALL_MIDDLE_X, SMALL_RAIL_Y, SMALL_TRACK_Z))
+				.setKnownShape(true)
+				.addProcessor(new BlockIgnoreProcessor(List.of(Blocks.STRUCTURE_VOID)))
+				.setBoundingBox(new BoundingBox(chunk.getMinBlockX(), level.getMinY(), chunk.getMinBlockZ(),
+						chunk.getMaxBlockX(), level.getMaxY(), chunk.getMaxBlockZ()));
+		BlockPos origin = new BlockPos(plan.x()[middle] - SMALL_MIDDLE_X, plan.track()[middle] - SMALL_RAIL_Y,
+				plan.z()[middle] - SMALL_TRACK_Z);
+		BoundingBox box = station.getBoundingBox(settings, origin);
+		if (box.maxX() < chunk.getMinBlockX() || box.minX() > chunk.getMaxBlockX() || box.maxZ() < chunk.getMinBlockZ()
+				|| box.minZ() > chunk.getMaxBlockZ()) {
+			return;
+		}
+		station.placeInWorld(level, origin, origin, settings, RandomSource.create(origin.asLong()), WRITE);
+		for (int x = Math.max(box.minX(), chunk.getMinBlockX()); x <= Math.min(box.maxX(), chunk.getMaxBlockX()); x++) {
+			for (int z = Math.max(box.minZ(), chunk.getMinBlockZ()); z <= Math.min(box.maxZ(), chunk.getMaxBlockZ()); z++) {
+				for (int y = box.minY(); y <= box.maxY(); y++) {
+					if (level.getBlockEntity(pos.set(x, y, z)) instanceof DispenserBlockEntity carts) {
+						carts.setItem(0, new ItemStack(Items.MINECART));
+						carts.setItem(1, new ItemStack(Items.MINECART));
+					}
+				}
+				if (level.getBlockState(pos.set(x, box.minY(), z)).isSolid()) {
+					fillUnder(x, box.minY() - 1, z);
+				}
+			}
+		}
 	}
 
 	/** The side a line meets block i from, when this station track has its switch there, or null. */
@@ -1922,7 +1988,9 @@ public final class LineBuilder {
 	/**
 	 * What is built at block i. The plan's section comes from the generator's noise; where the real ground still
 	 * covers the line higher than a cut may reach, under an overhang or a hill the noise did not show, it becomes a
-	 * tunnel, so no cut is left with a roof of dirt.
+	 * tunnel, so no cut is left with a roof of dirt. Where the ground falls away under it deeper than a fill, into a
+	 * ravine or a cave mouth the noise did not show, for two blocks or more, it becomes a bridge, so no wall is built
+	 * up from the bottom.
 	 */
 	private Section section(int i) {
 		Section[] known = sections.computeIfAbsent(plan, line -> new Section[line.length()]);
@@ -1933,9 +2001,30 @@ public final class LineBuilder {
 			int track = plan.track()[i];
 			boolean open = planned == Section.FLAT || planned == Section.FILL || planned == Section.TRENCH;
 			boolean covered = open && reachable.test(x >> 4, z >> 4) && surface(x, z, track) > cutTop(i);
-			known[i] = covered ? Section.TUNNEL : planned;
+			boolean dropped = open && !covered && fallsAway(i) && (fallsAway(i - 1) || fallsAway(i + 1));
+			known[i] = covered ? Section.TUNNEL : dropped ? Section.BRIDGE : planned;
 		}
 		return known[i];
+	}
+
+	/** Whether the real ground under block i lies more than a fill below the rail. */
+	private boolean fallsAway(int i) {
+		if (i < 0 || i >= plan.length()) {
+			return false;
+		}
+		int x = plan.x()[i];
+		int z = plan.z()[i];
+		int track = plan.track()[i];
+		if (!reachable.test(x >> 4, z >> 4)) {
+			return false;
+		}
+		for (int y = track - 1; y >= track - Section.MAX_FILL - 1; y--) {
+			BlockState state = level.getBlockState(pos.set(x, y, z));
+			if (state.isSolid() || !state.getFluidState().isEmpty()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
