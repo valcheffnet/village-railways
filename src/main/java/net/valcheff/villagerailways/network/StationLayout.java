@@ -7,14 +7,15 @@ import java.util.List;
 /**
  * Where the one station of a village stands and where its lines meet it.
  *
- * <p>The station is a straight track of {@value #LENGTH} blocks just outside the village, along the middle of one side
- * of its footprint, the station building between it and the village. A line meets it at one of three slots: either
- * end, carrying on along the track, so two lines at the ends run straight through; or the middle, square on from
- * outside, where a switch takes it onto the track.
+ * <p>The station is a straight track just outside the village, along the middle of one side of its footprint, with a
+ * second track on the village side of it and the station house with its platform on the outer side: a western station
+ * of {@value #LENGTH} blocks with a large house, or a small one of {@value #SMALL_LENGTH} blocks. A line meets it at an
+ * end of either track and carries on along it; a trunk line comes in at both ends on one side, its second rail running
+ * into the second track. The middle takes no line, which would have to cross a track or the house.
  *
- * <p>A village where a trunk line starts or ends gets a western station instead: a second track on the village side of
- * the first, which the trunk's second rail runs into, and a large house with its platform on the outer side. The ends
- * of the second track are slots too; the middle takes no line, which would have to cross the house.
+ * <p>The stations of earlier versions are one track of {@value #LENGTH} blocks, the station building between it and
+ * the village. A line meets such a station at either end or at the middle, square on from outside, where a switch
+ * takes it onto the track. Such a station becomes a western one when a trunk line comes in.
  *
  * <p>Directions are indices into {@link #DIRECTIONS}: 0 east, 1 south, 2 west, 3 north.
  */
@@ -23,8 +24,13 @@ public final class StationLayout {
 	/** Blocks from the middle of the station track to either end, room for the western house's platform. */
 	static final int HALF_LENGTH = 18;
 	static final int LENGTH = 2 * HALF_LENGTH + 1;
+	/** The same for a small station with two tracks: its whole structure, end to end. */
+	public static final int SMALL_HALF_LENGTH = 5;
+	static final int SMALL_LENGTH = 2 * SMALL_HALF_LENGTH + 1;
 	/** How far the platform and house of a western station reach out from its track. */
 	static final int HOUSE_DEPTH = 14;
+	/** The same for a small station: its platform, house and eaves. */
+	static final int SMALL_HOUSE_DEPTH = 7;
 	/** Distance from a western station's track to its second track, as on a double track. */
 	static final int SECOND_TRACK = 2;
 
@@ -36,15 +42,16 @@ public final class StationLayout {
 	/**
 	 * A station.
 	 *
-	 * @param middle the middle block of the track
-	 * @param along  the way from the middle to the second end
-	 * @param out    the way out of the village, square to the track
+	 * @param middle     the middle block of the track
+	 * @param along      the way from the middle to the second end
+	 * @param out        the way out of the village, square to the track
+	 * @param halfLength blocks from the middle to either end
 	 */
-	public record Station(Point middle, int along, int out) {
+	public record Station(Point middle, int along, int out, int halfLength) {
 		public Point end(Slot slot) {
 			return switch (slot) {
-				case FIRST_END -> step(middle, (along + 2) % 4, HALF_LENGTH);
-				case SECOND_END -> step(middle, along, HALF_LENGTH);
+				case FIRST_END -> step(middle, (along + 2) % 4, halfLength);
+				case SECOND_END -> step(middle, along, halfLength);
 				case MIDDLE -> middle;
 				case OUTER_FIRST -> step(end(Slot.FIRST_END), (out + 2) % 4, SECOND_TRACK);
 				case OUTER_SECOND -> step(end(Slot.SECOND_END), (out + 2) % 4, SECOND_TRACK);
@@ -79,10 +86,11 @@ public final class StationLayout {
 			return List.of(end(Slot.FIRST_END), middle, end(Slot.SECOND_END));
 		}
 
-		/** The ground a western house and its platform take, beside the track on its outer side, end to end. */
+		/** The ground the house and its platform take, beside the track on its outer side, end to end. */
 		public Box house() {
-			Point a = step(step(middle, (along + 2) % 4, HALF_LENGTH), out, 1);
-			Point b = step(step(middle, along, HALF_LENGTH), out, HOUSE_DEPTH);
+			int depth = halfLength == SMALL_HALF_LENGTH ? SMALL_HOUSE_DEPTH : HOUSE_DEPTH;
+			Point a = step(step(middle, (along + 2) % 4, halfLength), out, 1);
+			Point b = step(step(middle, along, halfLength), out, depth);
 			return new Box(Math.min(a.x(), b.x()), Math.min(a.z(), b.z()), Math.max(a.x(), b.x()), Math.max(a.z(), b.z()));
 		}
 	}
@@ -96,8 +104,9 @@ public final class StationLayout {
 	 * neighbour it faces crosses that side, kept so the whole track lies along the side.
 	 *
 	 * @param neighbours the centers of the nearest other villages, nearest first
+	 * @param halfLength blocks from the middle of the track to either end
 	 */
-	public static List<Station> candidates(Village village, List<Point> neighbours, int margin) {
+	public static List<Station> candidates(Village village, List<Point> neighbours, int margin, int halfLength) {
 		List<Station> stations = new ArrayList<>();
 		List<Double> scores = new ArrayList<>();
 		for (int out = 0; out < 4; out++) {
@@ -114,7 +123,7 @@ public final class StationLayout {
 					toward = neighbour;
 				}
 			}
-			stations.add(station(village, out, toward, margin));
+			stations.add(station(village, out, toward, margin, halfLength));
 			scores.add(score);
 		}
 		List<Integer> order = new ArrayList<>(List.of(0, 1, 2, 3));
@@ -122,7 +131,7 @@ public final class StationLayout {
 		return order.stream().map(stations::get).toList();
 	}
 
-	private static Station station(Village village, int out, Point toward, int margin) {
+	private static Station station(Village village, int out, Point toward, int margin, int halfLength) {
 		boolean alongX = DIRECTIONS[out][0] == 0;
 		int edge = switch (out) {
 			case 0 -> village.maxX() + margin;
@@ -139,18 +148,21 @@ public final class StationLayout {
 			double mainToEdge = edge - (alongX ? center.z() : center.x());
 			side += (int) Math.round(sideDelta * mainToEdge / mainDelta);
 		}
-		int low = (alongX ? village.minX() : village.minZ()) + HALF_LENGTH;
-		int high = (alongX ? village.maxX() : village.maxZ()) - HALF_LENGTH;
+		int low = (alongX ? village.minX() : village.minZ()) + halfLength;
+		int high = (alongX ? village.maxX() : village.maxZ()) - halfLength;
 		side = low <= high ? Math.clamp(side, low, high) : (low + high) / 2;
 		Point middle = alongX ? new Point(side, edge) : new Point(edge, side);
-		return new Station(middle, alongX ? 0 : 1, out);
+		return new Station(middle, alongX ? 0 : 1, out, halfLength);
 	}
 
 	static Point step(Point point, int direction, int blocks) {
 		return new Point(point.x() + DIRECTIONS[direction][0] * blocks, point.z() + DIRECTIONS[direction][1] * blocks);
 	}
 
-	/** The station a track's corners describe: its middle, the way to its second end, and the way out of the village. */
+	/**
+	 * The station a track's corners describe: its middle, the way to its second end, the way out of the village and its
+	 * length.
+	 */
 	public static Station of(List<Point> track, Village village) {
 		Point first = track.getFirst();
 		Point middle = track.get(1);
@@ -161,6 +173,6 @@ public final class StationLayout {
 		if (outside.distanceSq(village.center()) < inside.distanceSq(village.center())) {
 			out = (out + 2) % 4;
 		}
-		return new Station(middle, along, out);
+		return new Station(middle, along, out, Math.abs(middle.x() - first.x()) + Math.abs(middle.z() - first.z()));
 	}
 }
