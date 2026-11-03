@@ -37,6 +37,7 @@ import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.Half;
+import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.block.state.properties.RailShape;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnoreProcessor;
@@ -1725,6 +1726,15 @@ public final class LineBuilder {
 			return;
 		}
 		station.placeInWorld(level, origin, origin, settings, RandomSource.create(origin.asLong()), WRITE);
+		// This game version turns a straight powered rail a quarter round too far when it turns it half round: the
+		// powered rails of a station turned so are laid again the way they run.
+		if (settings.getRotation() == Rotation.CLOCKWISE_180) {
+			for (StructureTemplate.StructureBlockInfo info : station.filterBlocks(origin, settings, Blocks.POWERED_RAIL)) {
+				if (inChunk(info.pos().getX(), info.pos().getZ())) {
+					set(info.pos().getX(), info.pos().getY(), info.pos().getZ(), straightBack(info.state()));
+				}
+			}
+		}
 		for (int x = Math.max(box.minX(), chunk.getMinBlockX()); x <= Math.min(box.maxX(), chunk.getMaxBlockX()); x++) {
 			for (int z = Math.max(box.minZ(), chunk.getMinBlockZ()); z <= Math.min(box.maxZ(), chunk.getMaxBlockZ()); z++) {
 				for (int y = box.minY(); y <= box.maxY(); y++) {
@@ -1738,6 +1748,16 @@ public final class LineBuilder {
 				}
 			}
 		}
+	}
+
+	/** A straight rail turned a quarter round back, any other rail as it is. */
+	private static BlockState straightBack(BlockState rail) {
+		Property<RailShape> shape = ((BaseRailBlock) rail.getBlock()).getShapeProperty();
+		return switch (rail.getValue(shape)) {
+			case NORTH_SOUTH -> rail.setValue(shape, RailShape.EAST_WEST);
+			case EAST_WEST -> rail.setValue(shape, RailShape.NORTH_SOUTH);
+			default -> rail;
+		};
 	}
 
 	/** The side a line meets block i from, when this station track has its switch there, or null. */
