@@ -39,22 +39,24 @@ public class TerrainScorer implements NetworkPlanner.RouteScorer {
 
 	@Override
 	public double score(List<Point> path) {
-		List<TerrainSampler.Column> samples = new ArrayList<>();
+		List<Point> points = new ArrayList<>();
 		List<Integer> cornerSamples = new ArrayList<>();
 		for (int i = 1; i < path.size(); i++) {
 			Point from = path.get(i - 1);
 			Point to = path.get(i);
 			int length = Math.abs(to.x() - from.x()) + Math.abs(to.z() - from.z());
 			for (int step = 0; step < length; step += STEP) {
-				samples.add(column(from.x() + Integer.signum(to.x() - from.x()) * step,
+				points.add(new Point(from.x() + Integer.signum(to.x() - from.x()) * step,
 						from.z() + Integer.signum(to.z() - from.z()) * step));
 			}
 			if (i < path.size() - 1) {
-				cornerSamples.add(samples.size());
-				samples.add(column(to.x(), to.z()));
+				cornerSamples.add(points.size());
+				points.add(to);
 			}
 		}
-		samples.add(column(path.get(path.size() - 1).x(), path.get(path.size() - 1).z()));
+		points.add(path.get(path.size() - 1));
+		// Columns not seen before cost a fresh look at the generator's noise each; they are read on several threads.
+		List<TerrainSampler.Column> samples = points.parallelStream().map(point -> column(point.x(), point.z())).toList();
 
 		double score = CORNER * cornerSamples.size();
 		for (int i = 0; i < samples.size(); i++) {
@@ -96,6 +98,12 @@ public class TerrainScorer implements NetworkPlanner.RouteScorer {
 		}
 		int gridX = Math.floorDiv(x + 4, 8) * 8;
 		int gridZ = Math.floorDiv(z + 4, 8) * 8;
-		return cache.computeIfAbsent(ChunkPos.asLong(gridX, gridZ), key -> terrain.sample(gridX, gridZ));
+		long key = ChunkPos.asLong(gridX, gridZ);
+		TerrainSampler.Column column = cache.get(key);
+		if (column == null) {
+			column = terrain.sample(gridX, gridZ);
+			cache.put(key, column);
+		}
+		return column;
 	}
 }

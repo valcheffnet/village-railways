@@ -122,6 +122,12 @@ public class NetworkPlanner {
 	/** Villages whose station a trunk line is trying out as a western one: its house closes the ground beside it. */
 	private final Set<Long> tryingWestern = new HashSet<>();
 	private RouteScorer scorer = FEWEST_CORNERS;
+	/** The villages, lines and stations as of the last change, for readers that must not wait while the planner works. */
+	private volatile Snapshot snapshot = new Snapshot(List.of(), List.of(), List.of(), Map.of());
+
+	private record Snapshot(List<Village> villages, List<Link> links, List<Link> stations,
+			Map<Long, Link> stationByVillage) {
+	}
 
 	public NetworkPlanner(PlannerSettings settings) {
 		this.settings = settings;
@@ -144,6 +150,7 @@ public class NetworkPlanner {
 		savedPartlyExplored.forEach((key, bits) -> partlyExplored.put(key, bits.clone()));
 		deferred.addAll(savedDeferred);
 		served.putAll(savedServed);
+		publish();
 	}
 
 	/** Two villages in a fixed order, so A-B and B-A are the same pair. */
@@ -224,28 +231,41 @@ public class NetworkPlanner {
 		return true;
 	}
 
-	public synchronized List<Village> villages() {
-		return List.copyOf(villages.values());
+	public List<Village> villages() {
+		return snapshot.villages();
 	}
 
-	public synchronized List<Link> links() {
-		return List.copyOf(links);
+	public List<Link> links() {
+		return snapshot.links();
 	}
 
-	public synchronized List<Link> stations() {
-		return List.copyOf(stations);
+	public List<Link> stations() {
+		return snapshot.stations();
 	}
 
-	public synchronized boolean isStation(VillagePair key) {
-		Integer index = stationByVillage.get(key.first());
-		Integer other = stationByVillage.get(key.second());
-		return index != null && stations.get(index).key().equals(key) || other != null && stations.get(other).key().equals(key);
+	public boolean isStation(VillagePair key) {
+		Map<Long, Link> byVillage = snapshot.stationByVillage();
+		Link first = byVillage.get(key.first());
+		Link second = byVillage.get(key.second());
+		return first != null && first.key().equals(key) || second != null && second.key().equals(key);
 	}
 
 	/** The station track of a village, or null while it has no line. */
-	public synchronized Link stationOf(long village) {
+	public Link stationOf(long village) {
+		return snapshot.stationByVillage().get(village);
+	}
+
+	/** {@link #stationOf}, as the planning has it so far. */
+	private Link currentStationOf(long village) {
 		Integer index = stationByVillage.get(village);
 		return index == null ? null : stations.get(index);
+	}
+
+	/** Makes the villages, lines and stations as they are now what {@link #links} and the like return. */
+	private void publish() {
+		Map<Long, Link> byVillage = new HashMap<>();
+		stationByVillage.forEach((village, index) -> byVillage.put(village, stations.get(index)));
+		snapshot = new Snapshot(List.copyOf(villages.values()), List.copyOf(links), List.copyOf(stations), byVillage);
 	}
 
 	public synchronized boolean knows(long villageId) {
@@ -281,7 +301,9 @@ public class NetworkPlanner {
 			}
 		}
 		List<VillagePair> ordered = new ArrayList<>(pairs);
-		return planPairs(pairs, filter);
+		List<Link> added = planPairs(pairs, filter);
+		publish();
+		return added;
 	}
 
 	/**
@@ -301,7 +323,9 @@ public class NetworkPlanner {
 			}
 		}
 		failedTrunks.clear();
-		return planPairs(pairs, filter);
+		List<Link> added = planPairs(pairs, filter);
+		publish();
+		return added;
 	}
 
 	/**
@@ -327,7 +351,7 @@ public class NetworkPlanner {
 		if (host == null) {
 			return;
 		}
-		boolean hostKept = stationOf(host.id()) != null || !linksOf(host.id()).isEmpty();
+		boolean hostKept = currentStationOf(host.id()) != null || !linksOf(host.id()).isEmpty();
 		if (!hostKept && area(village) > area(host)) {
 			long old = host.id();
 			served.replaceAll((servedId, by) -> by == old ? id : by);
@@ -546,6 +570,7 @@ public class NetworkPlanner {
 				stations.set(i, stations.get(i).withStatus(status));
 			}
 		}
+		publish();
 	}
 
 	/** Which way out of which station a found way belongs to: by slot and the side of the village it leaves from. */
@@ -560,7 +585,7 @@ public class NetworkPlanner {
 	 * village picks one, the same one every time. Null when no side has room.
 	 */
 	private Link stationFor(Village village, PathFilter filter) {
-		Link known = stationOf(village.id());
+		Link known = currentStationOf(village.id());
 		if (known != null) {
 			return known;
 		}
@@ -699,7 +724,7 @@ public class NetworkPlanner {
 		int band = settings.stationMargin() - 1 - (StationLayout.Station.innerOf(slot) != null ? DOUBLE_TRACK : 0);
 		ExitGrid grid = new ExitGrid(area, List.of(new Box(village.minX(), village.minZ(), village.maxX(), village.maxZ())),
 				band);
-		Link own = stationOf(village.id());
+		Link own = currentStationOf(village.id());
 		// A station not kept yet is a new one, which has two tracks and a house.
 		if (own == null || own.twoTrackStation() || tryingWestern.contains(village.id())) {
 			grid.close(station.house());
@@ -816,7 +841,7 @@ public class NetworkPlanner {
 			return reject(choice.reason());
 		}
 		for (Link station : List.of(stationA, stationB)) {
-			if (stationOf(station.from()) == null) {
+			if (currentStationOf(station.from()) == null) {
 				addStation(station);
 				added.add(station);
 			}
@@ -941,7 +966,7 @@ public class NetworkPlanner {
 				return false;
 			}
 			Village other = villages.get(line.other(village.id()));
-			StationLayout.Station otherLayout = StationLayout.of(stationOf(other.id()).path(), other);
+			StationLayout.Station otherLayout = StationLayout.of(currentStationOf(other.id()).path(), other);
 			Point otherEnd = line.from() == village.id() ? line.path().get(line.path().size() - 1) : line.path().get(0);
 			StationLayout.Slot otherSlot = Arrays.stream(StationLayout.Slot.values())
 					.filter(slot -> otherLayout.end(slot).equals(otherEnd)).findFirst().orElseThrow();
@@ -987,7 +1012,7 @@ public class NetworkPlanner {
 		if (station.twoTrackStation()) {
 			return true;
 		}
-		if (stationOf(village.id()) != null && !added.contains(station) && !unbuilt.test(station)) {
+		if (currentStationOf(village.id()) != null && !added.contains(station) && !unbuilt.test(station)) {
 			return false;
 		}
 		return houseFits(village, layout.house(), filter);
@@ -1051,10 +1076,10 @@ public class NetworkPlanner {
 		// much sea.
 		Map<List<Point>, Double> routes = new LinkedHashMap<>();
 		List<Box> newHouses = new ArrayList<>();
-		if (stationOf(a.id()) == null) {
+		if (currentStationOf(a.id()) == null) {
 			newHouses.add(layoutA.house());
 		}
-		if (stationOf(b.id()) == null) {
+		if (currentStationOf(b.id()) == null) {
 			newHouses.add(layoutB.house());
 		}
 		for (StationLayout.Slot slotA : slotsA) {

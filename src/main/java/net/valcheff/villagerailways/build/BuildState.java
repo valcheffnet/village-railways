@@ -211,6 +211,17 @@ public class BuildState {
 		return List.copyOf(linesByChunk.getOrDefault(key, List.of()));
 	}
 
+	/** The lines that run through the chunks within {@code radius} chunks of a chunk. */
+	public synchronized Set<VillagePair> linesNear(ChunkPos chunk, int radius) {
+		Set<VillagePair> near = new HashSet<>();
+		for (int x = chunk.x - radius; x <= chunk.x + radius; x++) {
+			for (int z = chunk.z - radius; z <= chunk.z + radius; z++) {
+				near.addAll(linesByChunk.getOrDefault(ChunkPos.asLong(x, z), List.of()));
+			}
+		}
+		return near;
+	}
+
 	/** Records that a line has been built into a chunk. */
 	public synchronized void markBuilt(long chunk, VillagePair line) {
 		builtByLine.computeIfAbsent(line, key -> new HashSet<>()).add(chunk);

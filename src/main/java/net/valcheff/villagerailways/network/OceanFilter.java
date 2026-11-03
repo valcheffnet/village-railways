@@ -1,5 +1,6 @@
 package net.valcheff.villagerailways.network;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.core.QuartPos;
@@ -31,18 +32,23 @@ public class OceanFilter implements NetworkPlanner.PathFilter {
 
 	@Override
 	public boolean accepts(List<Point> path) {
-		int oceanRun = 0;
+		List<Point> samples = new ArrayList<>();
 		for (int i = 1; i < path.size(); i++) {
 			Point from = path.get(i - 1);
 			Point to = path.get(i);
 			int length = Math.abs(to.x() - from.x()) + Math.abs(to.z() - from.z());
 			for (int step = 0; step <= length; step += STEP) {
-				int x = from.x() + Integer.signum(to.x() - from.x()) * step;
-				int z = from.z() + Integer.signum(to.z() - from.z()) * step;
-				oceanRun = isOcean(x, z) ? oceanRun + STEP : 0;
-				if (oceanRun > maxCrossing) {
-					return false;
-				}
+				samples.add(new Point(from.x() + Integer.signum(to.x() - from.x()) * step,
+						from.z() + Integer.signum(to.z() - from.z()) * step));
+			}
+		}
+		// Each biome lookup works the noise out anew; the samples of a long route are read on several threads.
+		List<Boolean> ocean = samples.parallelStream().map(point -> isOcean(point.x(), point.z())).toList();
+		int oceanRun = 0;
+		for (boolean sample : ocean) {
+			oceanRun = sample ? oceanRun + STEP : 0;
+			if (oceanRun > maxCrossing) {
+				return false;
 			}
 		}
 		return true;

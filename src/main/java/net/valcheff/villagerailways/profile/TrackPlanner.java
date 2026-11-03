@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -530,11 +531,13 @@ public class TrackPlanner {
 		}
 		int[] ground = new int[length];
 		int[] water = new int[length];
-		for (int i = 0; i < length; i++) {
+		// Each column costs a fresh look at the generator's noise; the columns of a long line are read on several
+		// threads.
+		IntStream.range(0, length).parallel().forEach(i -> {
 			TerrainSampler.Column column = terrain.sample(x[i], z[i]);
 			ground[i] = column.ground();
 			water[i] = column.water();
-		}
+		});
 		return new Layout(x, z, corner, ground, water);
 	}
 

@@ -95,6 +95,8 @@ public class RailwayService {
 	private static final int WESTERN_REACH = 20;
 	/** Closest another track may run to a line where it gets a second rail. */
 	private static final int SECOND_RAIL_CLEARANCE = TrackPlanner.DOUBLE_TRACK + 2;
+	/** How far round a generating chunk the plans of the lines are worked out ahead. */
+	private static final int PLAN_AHEAD_CHUNKS = 6;
 
 	private final ServerLevel level;
 	private final RailwayNetwork network;
@@ -104,6 +106,8 @@ public class RailwayService {
 	private final TerrainSampler terrain;
 	private final Map<VillagePair, Link> lines = new ConcurrentHashMap<>();
 	private final Map<VillagePair, Optional<TrackPlan>> plans = new ConcurrentHashMap<>();
+	/** Plans being worked out ahead, by line. */
+	private final Map<VillagePair, CompletableFuture<Void>> planning = new ConcurrentHashMap<>();
 	/** Where each line shares a double tunnel with another one; see {@link #pairing}. */
 	private final Map<VillagePair, int[]> pairings = new ConcurrentHashMap<>();
 	/** Whether lines were planned or finished since the maps on the station walls were drawn. */
@@ -121,6 +125,13 @@ public class RailwayService {
 		thread.setDaemon(true);
 		return thread;
 	});
+	/** Works out the plans of the lines near generating chunks, several at once; see {@link #planAhead}. */
+	private final ExecutorService trackPlanners = Executors.newFixedThreadPool(
+			Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 4)), runnable -> {
+				Thread thread = new Thread(runnable, "Village Railways track planner");
+				thread.setDaemon(true);
+				return thread;
+			});
 
 	private RailwayService(ServerLevel level, RailwayNetwork network, BuildState buildState,
 			TrackSettings trackSettings) {
@@ -296,6 +307,9 @@ public class RailwayService {
 			}
 			if (buildState.register(link, false, reachOf(link))) {
 				lines.put(link.key(), link);
+				// A plan of the line as it was may have been worked out ahead meanwhile.
+				plans.remove(link.key());
+				planning.remove(link.key());
 				if (buildState.hasQueued(link.key())) {
 					// Part of it goes into chunks that exist already: profile it here, not on the server thread.
 					planOf(link);
@@ -508,6 +522,7 @@ public class RailwayService {
 		// While the server starts, the land round spawn waits only for its own square, or the start would take
 		// minutes on this game version; a line planned through it after all is built into it as it loads.
 		awaitPlanned(ticking ? around : around.subList(0, 1));
+		planAhead(chunk);
 		List<VillagePair> keys = buildState.decorate(chunk);
 		List<TrackPlan> toBuild = new ArrayList<>();
 		List<VillagePair> built = new ArrayList<>();
@@ -516,6 +531,10 @@ public class RailwayService {
 			Link link = lines.get(key);
 			if (link == null) {
 				continue;
+			}
+			CompletableFuture<Void> ahead = planning.get(key);
+			if (ahead != null) {
+				ahead.join();
 			}
 			Optional<TrackPlan> plan = planOf(link);
 			if (plan.isEmpty()) {
@@ -539,6 +558,20 @@ public class RailwayService {
 		for (VillagePair key : built) {
 			if (buildState.isComplete(key)) {
 				finish(key, Link.Status.BUILT);
+			}
+		}
+	}
+
+	/**
+	 * Starts working out the plans of the lines within {@value #PLAN_AHEAD_CHUNKS} chunks of a generating chunk on the
+	 * track planner threads, so they are ready when their chunks generate. Some game versions generate the land about
+	 * one chunk at a time, and a plan worked out inside that chunk holds all of it up.
+	 */
+	private void planAhead(ChunkPos chunk) {
+		for (VillagePair key : buildState.linesNear(chunk, PLAN_AHEAD_CHUNKS)) {
+			Link link = lines.get(key);
+			if (link != null && !plans.containsKey(key) && !network.planner().isStation(key)) {
+				planning.computeIfAbsent(key, k -> CompletableFuture.runAsync(() -> planOf(link), trackPlanners));
 			}
 		}
 	}
@@ -930,6 +963,7 @@ public class RailwayService {
 		buildState.finish(key);
 		lines.remove(key);
 		plans.remove(key);
+		planning.remove(key);
 	}
 
 	public void save() {
@@ -943,6 +977,7 @@ public class RailwayService {
 
 	public void stop() {
 		planner.shutdownNow();
+		trackPlanners.shutdownNow();
 		try {
 			planner.awaitTermination(10, TimeUnit.SECONDS);
 		} catch (InterruptedException e) {
