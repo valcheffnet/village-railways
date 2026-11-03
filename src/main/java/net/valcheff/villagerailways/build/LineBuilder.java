@@ -1726,10 +1726,14 @@ public final class LineBuilder {
 			return;
 		}
 		station.placeInWorld(level, origin, origin, settings, RandomSource.create(origin.asLong()), WRITE);
-		// This game version turns a straight rail a quarter round too far when it turns it half round, though the curves
-		// come out right: the straight rails of a station turned so are laid again the way they run.
+		// The game of this version turns a straight rail a quarter round too far when it turns it half round, though the
+		// curves come out right (Forge fixes that, Fabric and Paper do not): such rails of a station turned so are laid
+		// again the way they run.
 		if (settings.getRotation() == Rotation.CLOCKWISE_180) {
 			for (Block rail : List.of(Blocks.RAIL, Blocks.POWERED_RAIL)) {
+				if (!turnsStraightWrong(rail)) {
+					continue;
+				}
 				for (StructureTemplate.StructureBlockInfo info : station.filterBlocks(origin, settings, rail)) {
 					if (inChunk(info.pos().getX(), info.pos().getZ())) {
 						set(info.pos().getX(), info.pos().getY(), info.pos().getZ(), straightBack(info.state()));
@@ -1750,6 +1754,12 @@ public final class LineBuilder {
 				}
 			}
 		}
+	}
+
+	/** Whether the game turns a straight rail of this block a quarter round too far when it turns it half round. */
+	private static boolean turnsStraightWrong(Block rail) {
+		BlockState straight = rail.defaultBlockState();
+		return straight.rotate(Rotation.CLOCKWISE_180) != straight;
 	}
 
 	/** A straight rail turned a quarter round back, any other rail as it is. */
