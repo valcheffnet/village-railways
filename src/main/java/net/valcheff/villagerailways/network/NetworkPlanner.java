@@ -1016,16 +1016,7 @@ public class NetworkPlanner {
 				}
 			}
 		}
-		int reach = MAX_VILLAGE_REACH + settings.villageMargin();
-		for (Village other : villagesIn(house.minX() - reach, house.minZ() - reach, house.maxX() + reach,
-				house.maxZ() + reach)) {
-			for (int i = 1; i < outline.size() && other.id() != village.id(); i++) {
-				if (other.touches(outline.get(i - 1), outline.get(i), settings.villageMargin())) {
-					return false;
-				}
-			}
-		}
-		return filter.accepts(outline);
+		return clearOfOtherVillages(village, outline) && filter.accepts(outline);
 	}
 
 	/**

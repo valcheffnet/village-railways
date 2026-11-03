@@ -1518,7 +1518,7 @@ public final class LineBuilder {
 				hangLantern(x - side.getStepX(), track, z - side.getStepZ());
 			}
 		} else if (section != Section.BRIDGE && section != Section.TUNNEL && section != Section.TUBE
-				&& templated(i) == null && !isWesternStation() && isLampSpot(i, LAMP_SPACING / 2)) {
+				&& templated(i) == null && !isTwoTrackStation() && isLampSpot(i, LAMP_SPACING / 2)) {
 			placePost(x + lit.getStepX(), track, z + lit.getStepZ(),
 					Blocks.COPPER_LANTERN.weathering().unaffected().defaultBlockState());
 		}
@@ -1692,7 +1692,7 @@ public final class LineBuilder {
 	}
 
 	/** Whether the current track is a two-track station's, or its second track, which have the house's own lamps. */
-	private boolean isWesternStation() {
+	private boolean isTwoTrackStation() {
 		TrackPlan line = lineOf.get(plan);
 		return plan.western() || plan.small() || line != null && (line.western() || line.small());
 	}
