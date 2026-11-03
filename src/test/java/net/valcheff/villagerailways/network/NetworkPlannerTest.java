@@ -47,8 +47,9 @@ class NetworkPlannerTest {
 			Village village = villages.stream().filter(candidate -> candidate.id() == station.from()).findFirst().orElseThrow();
 			List<Point> track = station.path();
 			assertEquals(3, track.size());
-			assertEquals(StationLayout.LENGTH - 1, Math.abs(track.get(2).x() - track.get(0).x())
-					+ Math.abs(track.get(2).z() - track.get(0).z()));
+			assertTrue(station.twoTrackStation(), "a station with one track: " + track);
+			assertEquals(station.trunk() ? StationLayout.LENGTH - 1 : StationLayout.SMALL_LENGTH - 1,
+					Math.abs(track.get(2).x() - track.get(0).x()) + Math.abs(track.get(2).z() - track.get(0).z()));
 			for (int i = 1; i < track.size(); i++) {
 				assertFalse(village.touches(track.get(i - 1), track.get(i), SETTINGS.stationMargin() - 1),
 						"station inside its village: " + track);
@@ -68,8 +69,10 @@ class NetworkPlannerTest {
 		Point east = planner.stationOf(2).path().get(1);
 		assertEquals(60 + SETTINGS.stationMargin(), west.x(), "station of the west village at " + west);
 		assertEquals(800 - 60 - SETTINGS.stationMargin(), east.x(), "station of the east village at " + east);
-		// Facing each other, the line runs from middle to middle in one straight.
-		assertEquals(List.of(west, east), planner.links().getFirst().path());
+		// The line leaves along a track, from an end of one station to an end of the other.
+		List<Point> path = planner.links().getFirst().path();
+		assertFalse(path.getFirst().equals(west) || path.getLast().equals(east), "a line at the middle: " + path);
+		assertNetworkRules(planner);
 	}
 
 	@Test
@@ -160,7 +163,7 @@ class NetworkPlannerTest {
 	}
 
 	@Test
-	void trunkLineEndsAtWesternStations() {
+	void trunkLineEndsAtTwoTrackStations() {
 		// Two pairs of villages 1800 blocks apart along a line, so each trunk end has room for its house.
 		List<Village> villages = List.of(village(1, 0, 0), village(2, 600, 0), village(4, 2400, 0), village(5, 3000, 0));
 		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
@@ -168,8 +171,8 @@ class NetworkPlannerTest {
 		Link trunk = planner.links().stream().filter(Link::trunk).findFirst().orElseThrow();
 		Village first = villages.stream().filter(village -> village.id() == trunk.from()).findFirst().orElseThrow();
 		Village second = villages.stream().filter(village -> village.id() == trunk.to()).findFirst().orElseThrow();
-		assertTrue(planner.stationOf(first.id()).trunk() && planner.stationOf(second.id()).trunk(),
-				"western stations at both ends");
+		assertTrue(planner.stationOf(first.id()).twoTrackStation() && planner.stationOf(second.id()).twoTrackStation(),
+				"two-track stations at both ends");
 		StationLayout.Station start = StationLayout.of(planner.stationOf(first.id()).path(), first);
 		StationLayout.Station end = StationLayout.of(planner.stationOf(second.id()).path(), second);
 		List<Point> path = trunk.path();
@@ -202,6 +205,18 @@ class NetworkPlannerTest {
 		exploreAll(planner, villages, ACCEPT_ALL);
 		long middleTrunks = planner.links().stream().filter(link -> link.trunk() && (link.connects(1) || link.connects(2))).count();
 		assertTrue(middleTrunks <= 3 && middleTrunks > 0, middleTrunks + " trunk lines from the middle group: " + planner.links());
+		assertNetworkRules(planner);
+	}
+
+	@Test
+	void closeVillagesShareOneStation() {
+		// Footprints 40 blocks apart: one station for the two, no line between them, and a line on to the third.
+		NetworkPlanner planner = new NetworkPlanner(SETTINGS);
+		exploreAll(planner, List.of(village(1, 0, 0), village(2, 160, 0), village(3, 800, 0)), ACCEPT_ALL);
+		assertEquals(1, planner.servedVillages().size(), "served " + planner.servedVillages());
+		assertTrue(planner.stationOf(1) == null || planner.stationOf(2) == null, "two stations " + planner.stations());
+		assertTrue(planner.links().stream().noneMatch(link -> link.connects(1) && link.connects(2)));
+		assertTrue(planner.links().stream().anyMatch(link -> link.connects(3)), "no line to the third village");
 		assertNetworkRules(planner);
 	}
 
@@ -324,6 +339,13 @@ class NetworkPlannerTest {
 			}
 		}
 		degree.forEach((village, count) -> assertTrue(count <= SETTINGS.maxLinks(), village + " has " + count));
+		for (Link station : planner.stations()) {
+			for (Link other : planner.stations()) {
+				assertTrue(station == other || station.path().get(1).distanceSq(other.path().get(1)) >= 200L * 200L,
+						"stations " + station.path() + " and " + other.path() + " too close");
+			}
+			assertFalse(planner.servedVillages().containsKey(station.from()), "a station for a served village");
+		}
 		Map<Point, Integer> slotUse = new HashMap<>();
 		for (Link link : links) {
 			slotUse.merge(link.path().getFirst(), 1, Integer::sum);
